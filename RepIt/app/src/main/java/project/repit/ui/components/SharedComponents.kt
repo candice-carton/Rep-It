@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,9 +22,6 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import project.repit.navigation.Screen
 import project.repit.ui.theme.*
-
-private val Icons.Filled.BarChart: ImageVector
-private val Icons.Filled.EmojiEvents: ImageVector
 
 @Composable
 fun FitBottomBar(navController: NavController) {
@@ -101,9 +99,10 @@ fun StarsRow(filled: Int, total: Int = 5, starSize: Int = 18) {
     Row {
         repeat(total) { i ->
             Icon(
-                imageVector = if (i < filled) Icons.Filled.Star else Icons.Filled.StarOutline,
+                // CORRECTED: Use Icons.Outlined.Star for the empty star icon.
+                imageVector = if (i < filled) Icons.Filled.Star else Icons.Outlined.Star,
                 contentDescription = null,
-                tint     = if (i < filled) StarYellow else Color(0xFFD1D5DB),
+                tint = if (i < filled) StarYellow else Color(0xFFD1D5DB),
                 modifier = Modifier.size(starSize.dp),
             )
         }
@@ -133,4 +132,3 @@ fun StatChip(value: String, label: String) {
         Text(label, fontSize = 11.sp, color = TextSecondary)
     }
 }
-

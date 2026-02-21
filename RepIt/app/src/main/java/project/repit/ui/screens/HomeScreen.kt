@@ -1,73 +1,59 @@
 package project.repit.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import project.repit.data.model.Routine
+import project.repit.ui.components.FitBottomBar
+import project.repit.ui.components.RoutineCard
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(routines: List<Routine>) {
+fun HomeScreen(navController: NavController) {
+
+    // CORRECTION : La liste de routines est mise à jour pour correspondre
+    // à la nouvelle définition de la data class 'Routine'.
+    val routines: List<Routine> = listOf(
+        Routine(
+            id = 1,
+            title = "Routine de la semaine",
+            description = "Entraînement complet pour tous les jours.",
+            frequency = "L, M, M, J, V",
+            targetMinutes = 30
+        ),
+        Routine(
+            id = 2,
+            title = "Full Body Débutant",
+            description = "Idéal pour commencer la musculation.",
+            frequency = "M, V",
+            targetMinutes = 45
+        )
+    )
+
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
         topBar = {
             TopAppBar(title = { Text("Rep-It · Mes routines") })
+        },
+        bottomBar = {
+            FitBottomBar(navController = navController)
         }
     ) { innerPadding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(innerPadding)
+                .padding(16.dp)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(routines, key = { it.id }) { routine ->
+            // Cette partie fonctionne maintenant car 'routines' et 'RoutineCard'
+            // utilisent la même structure de données.
+            routines.forEach { routine ->
                 RoutineCard(routine)
             }
-        }
-    }
-}
-
-@Composable
-private fun RoutineCard(routine: Routine) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = routine.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = routine.description,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = "Fréquence: ${routine.frequency}",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                text = "Objectif: ${routine.targetMinutes} min",
-                style = MaterialTheme.typography.bodySmall,
-            )
         }
     }
 }
