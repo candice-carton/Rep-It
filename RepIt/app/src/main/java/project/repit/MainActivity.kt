@@ -26,12 +26,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -59,18 +55,8 @@ class MainActivity : ComponentActivity() {
 fun RoutineHomeScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val routines = remember {
-        mutableStateListOf<Routine>().apply {
-            val loadedRoutines = runCatching { RoutineFileUtil.readRoutines(context) }
-                .getOrElse { emptyList() }
-            addAll(loadedRoutines.sortedBy { priorityWeight(it.priority) })
-        }
-    }
-
-    var editedIndex by remember { mutableIntStateOf(-1) }
-    var deletingIndex by remember { mutableIntStateOf(-1) }
-    val routineFilePath = remember { context.getFileStreamPath("routines.txt").absolutePath }
-    fun persistRoutines() {
-        runCatching { RoutineFileUtil.saveRoutines(context, routines) }
+        RoutineFileUtil.readRoutines(context)
+            .sortedBy { priorityWeight(it.priority) }
     }
 
     LazyColumn(
@@ -87,11 +73,17 @@ fun RoutineHomeScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        item {
-            Text(
-                text = "Fichier local : $routineFilePath",
-                style = MaterialTheme.typography.bodySmall
-            )
+        if (routines.isEmpty()) {
+            item {
+                Text(
+                    text = "Aucune routine trouvée dans le fichier local.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        } else {
+            items(routines) { routine ->
+                RoutineBox(routine)
+            }
         }
 
         if (routines.isEmpty()) {
@@ -127,14 +119,28 @@ fun RoutineHomeScreen(modifier: Modifier = Modifier) {
         )
     }
 
-    if (deletingIndex in routines.indices) {
+    if (editedIndex >= 0) {
+        EditRoutineDialog(
+            routine = routines[editedIndex],
+            onDismiss = { editedIndex = -1 },
+            onSave = { updatedRoutine ->
+                routines[editedIndex] = updatedRoutine
+                val sortedRoutines = routines.sortedBy { priorityWeight(it.priority) }
+                routines.clear()
+                routines.addAll(sortedRoutines)
+                RoutineFileUtil.saveRoutines(context, routines)
+                editedIndex = -1
+            }
+        )
+    }
+
+    if (deletingIndex >= 0) {
         DeleteRoutineDialog(
             routine = routines[deletingIndex],
             onDismiss = { deletingIndex = -1 },
             onConfirmDelete = {
                 routines.removeAt(deletingIndex)
-                persistRoutines()
-                editedIndex = -1
+                RoutineFileUtil.saveRoutines(context, routines)
                 deletingIndex = -1
             }
         )
@@ -143,24 +149,10 @@ fun RoutineHomeScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun RoutineBox(
-    routine: Routine,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit
-) {
+private fun RoutineBox(routine: Routine) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(text = routine.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Row {
-                    IconButton(onClick = onEditClick) {
-                        Icon(imageVector = Icons.Filled.Edit, contentDescription = "Modifier la routine")
-                    }
-                    IconButton(onClick = onDeleteClick) {
-                        Icon(imageVector = Icons.Filled.Delete, contentDescription = "Supprimer la routine")
-                    }
-                }
-            }
+            Text(text = routine.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(text = routine.description, style = MaterialTheme.typography.bodyMedium)
             Text(text = "Catégorie : ${routine.category}", style = MaterialTheme.typography.bodySmall)
             Text(text = "Priorité : ${routine.priority}", style = MaterialTheme.typography.bodySmall)
