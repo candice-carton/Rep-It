@@ -6,7 +6,11 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import project.repit.ui.screens.ChallengeScreen
 import project.repit.ui.screens.HomeScreen
+import project.repit.ui.screens.NotificationsScreen
+import project.repit.ui.screens.ProfileScreen
+import project.repit.ui.screens.StatisticsScreen
 
 /**
  * Définit toutes les routes (écrans) possibles de l'application.
@@ -44,20 +48,19 @@ fun RepitNavHost(
         // Exemple pour les autres écrans (actuellement vides)
 
         composable(route = Screen.NewChallenge.route) {
-            // À remplacer par votre écran de défis, par exemple :
-            // NewChallengeScreen(navController = navController)
+            ChallengeScreen()
         }
 
         composable(route = Screen.Notifications.route) {
-            // NotificationsScreen(navController = navController)
+            NotificationsScreen()
         }
 
         composable(route = Screen.Statistics.route) {
-            // StatisticsScreen(navController = navController)
+            StatisticsScreen()
         }
 
         composable(route = Screen.Profile.route) {
-            // ProfileScreen(navController = navController)
+            ProfileScreen()
         }
     }
 }
