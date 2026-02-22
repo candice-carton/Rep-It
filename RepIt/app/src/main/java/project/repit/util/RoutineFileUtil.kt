@@ -2,7 +2,6 @@ package project.repit.util
 
 import android.content.Context
 import project.repit.model.Routine
-import java.time.LocalDateTime
 
 object RoutineFileUtil {
     private const val FILE_NAME = "routines.txt"
@@ -28,8 +27,8 @@ object RoutineFileUtil {
         routine.name.escape(),
         routine.description.escape(),
         routine.category.escape(),
-        routine.startAt.toString(),
-        routine.endAt.toString(),
+        routine.startAt.escape(),
+        routine.endAt.escape(),
         routine.periodicity.escape(),
         routine.priority.escape()
     ).joinToString(FIELD_SEPARATOR)
@@ -38,17 +37,15 @@ object RoutineFileUtil {
         val parts = line.split(FIELD_SEPARATOR)
         if (parts.size != 7) return null
 
-        return runCatching {
-            Routine(
-                name = parts[0].unescape(),
-                description = parts[1].unescape(),
-                category = parts[2].unescape(),
-                startAt = LocalDateTime.parse(parts[3]),
-                endAt = LocalDateTime.parse(parts[4]),
-                periodicity = parts[5].unescape(),
-                priority = parts[6].unescape()
-            )
-        }.getOrNull()
+        return Routine(
+            name = parts[0].unescape(),
+            description = parts[1].unescape(),
+            category = parts[2].unescape(),
+            startAt = parts[3].unescape(),
+            endAt = parts[4].unescape(),
+            periodicity = parts[5].unescape(),
+            priority = parts[6].unescape()
+        )
     }
 
     private fun String.escape(): String = replace("\\", "\\\\").replace("\t", "\\t")
