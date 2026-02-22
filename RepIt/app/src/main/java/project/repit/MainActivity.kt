@@ -10,20 +10,26 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenu
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,6 +64,7 @@ fun RoutineScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var routines by remember { mutableStateOf(emptyList<Routine>()) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
+    var isAddingRoutine by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         routines = RoutineFileUtil.readRoutines(context).sortedBy { priorityWeight(it.priority) }
@@ -70,11 +77,25 @@ fun RoutineScreen(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text(
-                text = "Mes Routines",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Mes Routines",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Button(onClick = { isAddingRoutine = true }) {
+                    Text("Ajouter")
+                }
+            }
+        }
+
+        if (routines.isEmpty()) {
+            item {
+                Text("Aucune routine pour le moment.")
+            }
         }
 
         itemsIndexed(routines) { index, routine ->
@@ -98,6 +119,17 @@ fun RoutineScreen(modifier: Modifier = Modifier) {
                     .sortedBy { priorityWeight(it.priority) }
                 RoutineFileUtil.saveRoutines(context, routines)
                 editingIndex = null
+            }
+        )
+    }
+
+    if (isAddingRoutine) {
+        AddRoutineDialog(
+            onDismiss = { isAddingRoutine = false },
+            onSave = { newRoutine ->
+                routines = (routines + newRoutine).sortedBy { priorityWeight(it.priority) }
+                RoutineFileUtil.saveRoutines(context, routines)
+                isAddingRoutine = false
             }
         )
     }
@@ -175,6 +207,135 @@ private fun EditRoutineDialog(
             }
         }
     )
+}
+
+@Composable
+private fun AddRoutineDialog(
+    onDismiss: () -> Unit,
+    onSave: (Routine) -> Unit
+) {
+    val categories = listOf("Santé", "Sport", "Bien-être", "Travail", "Personnel", "Autre")
+    val priorities = listOf("Élevée", "Moyenne", "Faible")
+
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf(categories.first()) }
+    var startAt by remember { mutableStateOf("") }
+    var endAt by remember { mutableStateOf("") }
+    var periodicity by remember { mutableStateOf("") }
+    var priority by remember { mutableStateOf(priorities[1]) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ajouter une routine") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nom") }
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") }
+                )
+                DropdownField(
+                    label = "Catégorie",
+                    options = categories,
+                    selectedOption = category,
+                    onOptionSelected = { category = it }
+                )
+                OutlinedTextField(
+                    value = startAt,
+                    onValueChange = { startAt = it },
+                    label = { Text("Heure de début") }
+                )
+                OutlinedTextField(
+                    value = endAt,
+                    onValueChange = { endAt = it },
+                    label = { Text("Heure de fin") }
+                )
+                OutlinedTextField(
+                    value = periodicity,
+                    onValueChange = { periodicity = it },
+                    label = { Text("Répétition") }
+                )
+                DropdownField(
+                    label = "Priorité",
+                    options = priorities,
+                    selectedOption = priority,
+                    onOptionSelected = { priority = it }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (name.isBlank()) return@TextButton
+                    onSave(
+                        Routine(
+                            name = name.trim(),
+                            description = description.trim(),
+                            category = category,
+                            startAt = startAt.trim(),
+                            endAt = endAt.trim(),
+                            periodicity = periodicity.trim(),
+                            priority = priority
+                        )
+                    )
+                }
+            ) {
+                Text("Ajouter")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DropdownField(
+    label: String,
+    options: List<String>,
+    selectedOption: String,
+    onOptionSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = selectedOption,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onOptionSelected(option)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
 }
 
 private fun priorityWeight(priority: String): Int = when (priority) {
