@@ -4,20 +4,32 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -28,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,7 +49,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -51,8 +67,89 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             RepitTheme {
+                var currentPage by remember { mutableStateOf(AppPage.Home) }
+
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    RoutineScreen(modifier = Modifier.padding(innerPadding))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            when (currentPage) {
+                                AppPage.Home -> EmptyPage(title = "Accueil")
+                                AppPage.Routines -> RoutineScreen()
+                                AppPage.Notifications -> EmptyPage(title = "Notifications")
+                                AppPage.Statistics -> EmptyPage(title = "Statistiques")
+                                AppPage.Profile -> EmptyPage(title = "Profil")
+                            }
+                        }
+                        BottomNavigationBar(
+                            currentPage = currentPage,
+                            onPageSelected = { currentPage = it }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private enum class AppPage(val label: String, val icon: ImageVector) {
+    Home("Accueil", Icons.Default.Home),
+    Routines("Défis", Icons.Default.FitnessCenter),
+    Notifications("Notifications", Icons.Default.Notifications),
+    Statistics("Statistiques", Icons.Default.BarChart),
+    Profile("Profil", Icons.Default.Person)
+}
+
+@Composable
+private fun BottomNavigationBar(
+    currentPage: AppPage,
+    onPageSelected: (AppPage) -> Unit
+) {
+    Surface(
+        tonalElevation = 4.dp,
+        shadowElevation = 8.dp
+    ) {
+        Column {
+            Divider()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                AppPage.entries.forEach { page ->
+                    val isSelected = page == currentPage
+                    val activeColor = MaterialTheme.colorScheme.primary
+                    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onPageSelected(page) }
+                            .padding(vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Icon(
+                            imageVector = page.icon,
+                            contentDescription = page.label,
+                            tint = if (isSelected) activeColor else inactiveColor
+                        )
+                        Text(
+                            text = page.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSelected) activeColor else inactiveColor
+                        )
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 2.dp)
+                                .size(if (isSelected) 6.dp else 0.dp)
+                                .clip(MaterialTheme.shapes.small)
+                                .background(if (isSelected) activeColor else MaterialTheme.colorScheme.surface)
+                        )
+                    }
                 }
             }
         }
@@ -60,7 +157,24 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun RoutineScreen(modifier: Modifier = Modifier) {
+private fun EmptyPage(title: String) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(text = "Page en cours de création")
+    }
+}
+
+@Composable
+fun RoutineScreen() {
     val context = LocalContext.current
     var routines by remember { mutableStateOf(emptyList<Routine>()) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
@@ -71,7 +185,7 @@ fun RoutineScreen(modifier: Modifier = Modifier) {
     }
 
     LazyColumn(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
