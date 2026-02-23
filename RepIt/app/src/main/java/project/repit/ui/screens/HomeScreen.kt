@@ -1,8 +1,10 @@
 package project.repit.ui.screens
 
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.navigation.NavController
 
 @Composable
-fun HomeScreen() {
-    PlaceholderScreen(title = "Accueil")
+fun HomeScreen(navController: NavController) {
+    Text("Home Screen")
 }

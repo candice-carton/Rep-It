@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import project.repit.model.Routine
 import project.repit.ui.components.DropdownField
 import project.repit.ui.components.RoutineBox
@@ -32,7 +33,7 @@ import project.repit.ui.theme.RepitTheme
 import project.repit.util.RoutineFileUtil
 
 @Composable
-fun RoutineScreen() {
+fun RoutineScreen(navController: NavController) {
     val context = LocalContext.current
     var routines by remember { mutableStateOf(emptyList<Routine>()) }
     var editingIndex by remember { mutableStateOf<Int?>(null) }
@@ -261,6 +262,6 @@ private fun priorityWeight(priority: String): Int = when (priority) {
 @Composable
 fun RoutinePreview() {
     RepitTheme {
-        RoutineScreen()
+        RoutineScreen(navController = NavController(LocalContext.current))
     }
 }

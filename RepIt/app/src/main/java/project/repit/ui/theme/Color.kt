@@ -2,10 +2,12 @@ package project.repit.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
-
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+val BrightBlue = Color(0xFF5E72E4)
+val SoftViolet = Color(0xFFB251F8)
+val FreshGreen = Color(0xFF2DCE89)
+val MutedPink = Color(0xFFF5365C)
+val LightGray = Color(0xFFADB5BD)
+val DarkerGray = Color(0xFF495057)
+val OffWhite = Color(0xFFF7FAFC)
+val TrueBlack = Color(0xFF000000)
+val PureWhite = Color(0xFFFFFFFF)
