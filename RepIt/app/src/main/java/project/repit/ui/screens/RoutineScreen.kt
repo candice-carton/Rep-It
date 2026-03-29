@@ -15,7 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,12 +25,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import project.repit.model.Routine
+import project.repit.model.RoutineViewModel
 import project.repit.ui.components.DropdownField
 import project.repit.ui.components.RoutineBox
 import project.repit.ui.theme.RepitTheme
-import project.repit.util.RoutineFileUtil
 
 /**
  * Affiche l'écran de gestion des routines.
@@ -39,17 +40,18 @@ import project.repit.util.RoutineFileUtil
  * de modifier celles qui existent et de les supprimer.
  *
  * @param navController Le contrôleur de navigation, utilisé pour la navigation entre les écrans.
+ * @param viewModel Le ViewModel pour gérer les données des routines.
  */
 @Composable
-fun RoutineScreen(navController: NavController) {
-    val context = LocalContext.current
-    var routines by remember { mutableStateOf(emptyList<Routine>()) }
-    var editingIndex by remember { mutableStateOf<Int?>(null) }
+fun RoutineScreen(
+    navController: NavController,
+    viewModel: RoutineViewModel = viewModel()
+) {
+    val routines by viewModel.allRoutines.collectAsState(initial = emptyList())
+    var editingRoutine by remember { mutableStateOf<Routine?>(null) }
     var isAddingRoutine by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        routines = RoutineFileUtil.readRoutines(context).sortedBy { priorityWeight(it.priority) }
-    }
+    val sortedRoutines = routines.sortedBy { priorityWeight(it.priority) }
 
     LazyColumn(
         modifier = Modifier
@@ -73,33 +75,30 @@ fun RoutineScreen(navController: NavController) {
             }
         }
 
-        if (routines.isEmpty()) {
+        if (sortedRoutines.isEmpty()) {
             item {
                 Text("Aucune routine pour le moment.")
             }
         }
 
-        itemsIndexed(routines) { index, routine ->
+        itemsIndexed(sortedRoutines) { _, routine ->
             RoutineBox(
                 routine = routine,
-                onEdit = { editingIndex = index },
+                onEdit = { editingRoutine = routine },
                 onDelete = {
-                    routines = routines.filterIndexed { currentIndex, _ -> currentIndex != index }
-                    RoutineFileUtil.saveRoutines(context, routines)
+                    viewModel.delete(routine)
                 }
             )
         }
     }
 
-    editingIndex?.let { index ->
+    editingRoutine?.let { routine ->
         EditRoutineDialog(
-            routine = routines[index],
-            onDismiss = { editingIndex = null },
+            routine = routine,
+            onDismiss = { editingRoutine = null },
             onSave = { updatedRoutine ->
-                routines = routines.toMutableList().also { it[index] = updatedRoutine }
-                    .sortedBy { priorityWeight(it.priority) }
-                RoutineFileUtil.saveRoutines(context, routines)
-                editingIndex = null
+                viewModel.update(updatedRoutine)
+                editingRoutine = null
             }
         )
     }
@@ -108,8 +107,7 @@ fun RoutineScreen(navController: NavController) {
         AddRoutineDialog(
             onDismiss = { isAddingRoutine = false },
             onSave = { newRoutine ->
-                routines = (routines + newRoutine).sortedBy { priorityWeight(it.priority) }
-                RoutineFileUtil.saveRoutines(context, routines)
+                viewModel.insert(newRoutine)
                 isAddingRoutine = false
             }
         )
