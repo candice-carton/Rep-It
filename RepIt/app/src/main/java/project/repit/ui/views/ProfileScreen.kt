@@ -1,4 +1,4 @@
-package project.repit.ui.screens
+package project.repit.ui.views
 
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
