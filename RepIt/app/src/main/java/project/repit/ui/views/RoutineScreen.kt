@@ -8,36 +8,15 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,8 +35,13 @@ import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Locale
 
+// --- CONSTANTES ---
+private val CATEGORIES = listOf("Santé", "Sport", "Bien-être", "Alimentation", "Travail", "Personnel", "Autre")
+private val PRIORITIES = listOf("Élevée", "Moyenne", "Faible")
+
 /**
  * Écran de gestion des routines suivant l'architecture MVVM avec UiEvents.
+ * La logique de filtrage et de partitionnement est désormais gérée dans le ViewModel.
  */
 @Composable
 fun RoutineScreen(
@@ -65,7 +49,11 @@ fun RoutineScreen(
     viewModel: RoutineViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val routines by viewModel.routines
+    
+    // Observation des états exposés par le ViewModel
+    val todayRoutines by viewModel.todayRoutines
+    val upcomingRoutines by viewModel.upcomingRoutines
+    val selectedCategory by viewModel.selectedCategory
     
     var editingRoutine by remember { mutableStateOf<RoutineVM?>(null) }
     var updatingRoutineValue by remember { mutableStateOf<RoutineVM?>(null) }
@@ -84,34 +72,15 @@ fun RoutineScreen(
         onResult = { isGranted -> hasNotificationPermission = isGranted }
     )
 
-    val categories = listOf("Tous", "Santé", "Sport", "Alimentation", "Bien-être", "Travail")
-    var selectedCategory by remember { mutableStateOf("Tous") }
-
-    val filteredRoutines = (if (selectedCategory == "Tous") {
-        routines
-    } else {
-        routines.filter { it.category == selectedCategory }
-    }).sortedWith(compareByDescending<RoutineVM> { it.createdAt }.thenBy { priorityWeight(it.priority) })
-
+    // --- UI ---
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyRow(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(categories) { category ->
-                val isSelected = selectedCategory == category
-                AssistChip(
-                    onClick = { 
-                        selectedCategory = category
-                        viewModel.onEvent(RoutineUiEvent.FilterByCategory(category))
-                    },
-                    label = { Text(category) },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                    )
-                )
+        CategoryTabs(
+            categories = listOf("Tous") + CATEGORIES,
+            selectedCategory = selectedCategory,
+            onCategorySelected = { 
+                viewModel.onEvent(RoutineUiEvent.FilterByCategory(it))
             }
-        }
+        )
 
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -124,29 +93,52 @@ fun RoutineScreen(
                 }
             }
 
-            if (filteredRoutines.isEmpty()) {
-                item { Text("Aucun défi trouvé.") }
-            }
-
-            itemsIndexed(filteredRoutines) { _, routine ->
-                RoutineBox(
-                    routine = routine,
-                    onEdit = { editingRoutine = routine },
-                    onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
-                    onStart = {
-                        if (routine.isQuantifiable) {
-                            updatingRoutineValue = routine
-                        } else if (!routine.isAllDay) {
-                            if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            } else {
-                                navController.navigate("${AppPage.Timer.name}/${routine.id}")
+            if (todayRoutines.isEmpty() && upcomingRoutines.isEmpty()) {
+                item { Text("Aucun défi trouvé.", modifier = Modifier.padding(16.dp)) }
+            } else {
+                // SECTION : AUJOURD'HUI
+                if (todayRoutines.isNotEmpty()) {
+                    item { SectionHeader("Défis du jour", MaterialTheme.colorScheme.primary) }
+                    items(todayRoutines, key = { it.id }) { routine ->
+                        RoutineItem(
+                            routine = routine,
+                            onEdit = { editingRoutine = routine },
+                            onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
+                            onStart = {
+                                handleRoutineStart(routine, hasNotificationPermission, permissionLauncher, navController, viewModel) { updatingRoutineValue = it }
                             }
-                        }
+                        )
                     }
-                )
+                }
+
+                // SECTION : À VENIR
+                if (upcomingRoutines.isNotEmpty()) {
+                    item { SectionHeader("Prochains défis", MaterialTheme.colorScheme.secondary) }
+                    items(upcomingRoutines, key = { it.id }) { routine ->
+                        RoutineItem(
+                            routine = routine,
+                            onEdit = { editingRoutine = routine },
+                            onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
+                            onStart = {
+                                handleRoutineStart(routine, hasNotificationPermission, permissionLauncher, navController, viewModel) { updatingRoutineValue = it }
+                            }
+                        )
+                    }
+                }
             }
+            item { Spacer(modifier = Modifier.height(32.dp)) }
         }
+    }
+
+    // --- DIALOGUES ---
+    if (isAddingRoutine) {
+        AddRoutineDialog(
+            onDismiss = { isAddingRoutine = false },
+            onSave = { newRoutine ->
+                viewModel.onEvent(RoutineUiEvent.AddRoutine(newRoutine))
+                isAddingRoutine = false
+            }
+        )
     }
 
     editingRoutine?.let { routine ->
@@ -170,15 +162,82 @@ fun RoutineScreen(
             }
         )
     }
+}
 
-    if (isAddingRoutine) {
-        AddRoutineDialog(
-            onDismiss = { isAddingRoutine = false },
-            onSave = { newRoutine ->
-                viewModel.onEvent(RoutineUiEvent.AddRoutine(newRoutine))
-                isAddingRoutine = false
-            }
-        )
+// --- SOUS-COMPOSANTS UI ---
+
+@Composable
+private fun CategoryTabs(
+    categories: List<String>,
+    selectedCategory: String,
+    onCategorySelected: (String) -> Unit
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(categories) { category ->
+            val isSelected = selectedCategory == category
+            AssistChip(
+                onClick = { onCategorySelected(category) },
+                label = { Text(category) },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String, color: Color) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = color,
+        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun RoutineItem(
+    routine: RoutineVM,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onStart: () -> Unit
+) {
+    RoutineBox(
+        routine = routine,
+        onEdit = onEdit,
+        onDelete = onDelete,
+        onStart = onStart
+    )
+}
+
+// --- LOGIQUE MÉTIER UI ---
+
+private fun handleRoutineStart(
+    routine: RoutineVM,
+    hasNotificationPermission: Boolean,
+    permissionLauncher: androidx.activity.result.ActivityResultLauncher<String>,
+    navController: NavController,
+    viewModel: RoutineViewModel,
+    onUpdateQuantifiable: (RoutineVM) -> Unit
+) {
+    if (routine.isQuantifiable) {
+        onUpdateQuantifiable(routine)
+    } else if (routine.isAllDay) {
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        viewModel.onEvent(RoutineUiEvent.UpdateRoutine(routine.copy(lastCompletedDate = today, progress = 100)))
+    } else {
+        if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            navController.navigate("${AppPage.Timer.name}/${routine.id}")
+        }
     }
 }
 
@@ -225,13 +284,10 @@ private fun UpdateValueDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave:
 
 @Composable
 private fun EditRoutineDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit) {
-    val categories = listOf("Santé", "Sport", "Bien-être", "Alimentation", "Travail", "Autre")
-    val priorities = listOf("Élevée", "Moyenne", "Faible")
-
     var name by remember(routine) { mutableStateOf(routine.name) }
     var category by remember(routine) { mutableStateOf(routine.category) }
-    var startAt by remember(routine) { mutableStateOf(routine.startAt) }
-    var endAt by remember(routine) { mutableStateOf(routine.endAt) }
+    var startAt by remember(routine) { mutableStateOf(if(routine.startAt.isEmpty()) "09:00" else routine.startAt) }
+    var endAt by remember(routine) { mutableStateOf(if(routine.endAt.isEmpty()) "10:00" else routine.endAt) }
     var isAllDay by remember(routine) { mutableStateOf(routine.isAllDay) }
     var isRepetitive by remember(routine) { mutableStateOf(routine.isRepetitive) }
     var priority by remember(routine) { mutableStateOf(routine.priority) }
@@ -242,6 +298,10 @@ private fun EditRoutineDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave:
     var targetValue by remember(routine) { mutableStateOf(routine.targetValue.toString()) }
     var unit by remember(routine) { mutableStateOf(routine.unit) }
 
+    LaunchedEffect(category) {
+        if (category == "Alimentation" && unit.isEmpty()) unit = "L"
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnClickOutside = false),
@@ -249,18 +309,17 @@ private fun EditRoutineDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave:
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nom") }, modifier = Modifier.fillMaxWidth())
-                DropdownField(label = "Catégorie", options = categories, selectedOption = category, onOptionSelected = { category = it })
+                DropdownField(label = "Catégorie", options = CATEGORIES, selectedOption = category, onOptionSelected = { category = it })
                 
-                if (category == "Alimentation" || isQuantifiable) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                        Text("Objectif quantifiable")
-                        Switch(checked = isQuantifiable, onCheckedChange = { isQuantifiable = it })
-                    }
-                    if (isQuantifiable) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(value = targetValue, onValueChange = { targetValue = it }, label = { Text("Cible") }, modifier = Modifier.weight(1f))
-                            OutlinedTextField(value = unit, onValueChange = { unit = it }, label = { Text("Unité") }, modifier = Modifier.weight(1f))
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("Objectif quantifiable")
+                    Switch(checked = isQuantifiable, onCheckedChange = { isQuantifiable = it })
+                }
+                
+                if (isQuantifiable) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = targetValue, onValueChange = { targetValue = it }, label = { Text("Cible") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = unit, onValueChange = { unit = it }, label = { Text("Unité") }, modifier = Modifier.weight(1f))
                     }
                 }
 
@@ -275,27 +334,25 @@ private fun EditRoutineDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave:
                     DatePickerField(label = "Date prévue", selectedDate = scheduledDate, onDateSelected = { scheduledDate = it })
                 }
                 
-                if (!isQuantifiable) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = isAllDay, onCheckedChange = { isAllDay = it })
-                        Text("Toute la journée")
-                    }
-                    if (!isAllDay) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TimePickerField(label = "Début", currentTime = startAt, onTimeSelected = { startAt = it }, modifier = Modifier.weight(1f))
-                            TimePickerField(label = "Fin", currentTime = endAt, onTimeSelected = { endAt = it }, modifier = Modifier.weight(1f))
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = isAllDay, onCheckedChange = { isAllDay = it })
+                    Text("Toute la journée")
+                }
+                if (!isAllDay) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TimePickerField(label = "Début", currentTime = startAt, onTimeSelected = { startAt = it }, modifier = Modifier.weight(1f))
+                        TimePickerField(label = "Fin", currentTime = endAt, onTimeSelected = { endAt = it }, modifier = Modifier.weight(1f))
                     }
                 }
-                DropdownField(label = "Priorité", options = priorities, selectedOption = priority, onOptionSelected = { priority = it })
+                DropdownField(label = "Priorité", options = PRIORITIES, selectedOption = priority, onOptionSelected = { priority = it })
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 val target = targetValue.toFloatOrNull() ?: 0f
                 onSave(routine.copy(
-                    name = name, category = category, startAt = if (isAllDay || isQuantifiable) "" else startAt, 
-                    endAt = if (isAllDay || isQuantifiable) "" else endAt, isAllDay = isAllDay, 
+                    name = name, category = category, startAt = if (isAllDay) "" else startAt, 
+                    endAt = if (isAllDay) "" else endAt, isAllDay = isAllDay, 
                     isRepetitive = isRepetitive, priority = priority, 
                     repeatDays = if (isRepetitive) repeatDays else emptyList(),
                     scheduledDate = if (isRepetitive) null else scheduledDate,
@@ -309,15 +366,13 @@ private fun EditRoutineDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave:
 
 @Composable
 private fun AddRoutineDialog(onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit) {
-    val categories = listOf("Santé", "Sport", "Bien-être", "Alimentation", "Travail", "Autre")
-    val priorities = listOf("Élevée", "Moyenne", "Faible")
     var name by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf(categories.first()) }
+    var category by remember { mutableStateOf(CATEGORIES.first()) }
     var startAt by remember { mutableStateOf("09:00") }
     var endAt by remember { mutableStateOf("10:00") }
     var isAllDay by remember { mutableStateOf(false) }
     var isRepetitive by remember { mutableStateOf(false) }
-    var priority by remember { mutableStateOf(priorities[1]) }
+    var priority by remember { mutableStateOf(PRIORITIES[1]) }
     var repeatDays by remember { mutableStateOf(listOf(1, 2, 3, 4, 5)) }
     var scheduledDate by remember { mutableStateOf<Long?>(System.currentTimeMillis()) }
     
@@ -326,10 +381,7 @@ private fun AddRoutineDialog(onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit)
     var unit by remember { mutableStateOf("") }
 
     LaunchedEffect(category) {
-        if (category == "Alimentation") {
-            isQuantifiable = true
-            if (unit.isEmpty()) unit = "L"
-        }
+        if (category == "Alimentation" && unit.isEmpty()) unit = "L"
     }
 
     AlertDialog(
@@ -339,18 +391,17 @@ private fun AddRoutineDialog(onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit)
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nom du défi") }, modifier = Modifier.fillMaxWidth())
-                DropdownField(label = "Catégorie", options = categories, selectedOption = category, onOptionSelected = { category = it })
+                DropdownField(label = "Catégorie", options = CATEGORIES, selectedOption = category, onOptionSelected = { category = it })
                 
-                if (category == "Alimentation") {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                        Text("Objectif quantifiable")
-                        Switch(checked = isQuantifiable, onCheckedChange = { isQuantifiable = it })
-                    }
-                    if (isQuantifiable) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(value = targetValue, onValueChange = { targetValue = it }, label = { Text("Cible") }, modifier = Modifier.weight(1f))
-                            OutlinedTextField(value = unit, onValueChange = { unit = it }, label = { Text("Unité") }, modifier = Modifier.weight(1f))
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("Objectif quantifiable")
+                    Switch(checked = isQuantifiable, onCheckedChange = { isQuantifiable = it })
+                }
+                
+                if (isQuantifiable) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = targetValue, onValueChange = { targetValue = it }, label = { Text("Cible") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = unit, onValueChange = { unit = it }, label = { Text("Unité") }, modifier = Modifier.weight(1f))
                     }
                 }
 
@@ -365,27 +416,25 @@ private fun AddRoutineDialog(onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit)
                     DatePickerField(label = "Date prévue", selectedDate = scheduledDate, onDateSelected = { scheduledDate = it })
                 }
 
-                if (!isQuantifiable) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = isAllDay, onCheckedChange = { isAllDay = it })
-                        Text("Toute la journée")
-                    }
-                    if (!isAllDay) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TimePickerField(label = "Début", currentTime = startAt, onTimeSelected = { startAt = it }, modifier = Modifier.weight(1f))
-                            TimePickerField(label = "Fin", currentTime = endAt, onTimeSelected = { endAt = it }, modifier = Modifier.weight(1f))
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = isAllDay, onCheckedChange = { isAllDay = it })
+                    Text("Toute la journée")
+                }
+                if (!isAllDay) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TimePickerField(label = "Début", currentTime = startAt, onTimeSelected = { startAt = it }, modifier = Modifier.weight(1f))
+                        TimePickerField(label = "Fin", currentTime = endAt, onTimeSelected = { endAt = it }, modifier = Modifier.weight(1f))
                     }
                 }
-                DropdownField(label = "Priorité", options = priorities, selectedOption = priority, onOptionSelected = { priority = it })
+                DropdownField(label = "Priorité", options = PRIORITIES, selectedOption = priority, onOptionSelected = { priority = it })
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 if (name.isNotBlank()) {
                     onSave(RoutineVM(
-                        name = name, description = "", category = category, startAt = if (isAllDay || isQuantifiable) "" else startAt,
-                        endAt = if (isAllDay || isQuantifiable) "" else endAt, isAllDay = isAllDay, 
+                        name = name, description = "", category = category, startAt = if (isAllDay) "" else startAt,
+                        endAt = if (isAllDay) "" else endAt, isAllDay = isAllDay, 
                         isRepetitive = isRepetitive, periodicity = "Personnalisé", priority = priority, 
                         repeatDays = if (isRepetitive) repeatDays else emptyList(),
                         scheduledDate = if (isRepetitive) null else scheduledDate,
@@ -419,7 +468,7 @@ fun DatePickerField(label: String, selectedDate: Long?, onDateSelected: (Long) -
     OutlinedTextField(
         value = dateDisplay, onValueChange = {}, readOnly = true, label = { Text(label) },
         modifier = Modifier.fillMaxWidth().clickable { datePickerDialog.show() }, enabled = false,
-        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+        colors = OutlinedTextFieldDefaults.colors(
             disabledTextColor = MaterialTheme.colorScheme.onSurface,
             disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
             disabledBorderColor = MaterialTheme.colorScheme.outline
@@ -442,18 +491,11 @@ fun TimePickerField(label: String, currentTime: String, onTimeSelected: (String)
     OutlinedTextField(
         value = currentTime, onValueChange = { }, readOnly = true, label = { Text(label) },
         modifier = modifier.clickable { timePickerDialog.show() }, enabled = false,
-        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+        colors = OutlinedTextFieldDefaults.colors(
             disabledTextColor = MaterialTheme.colorScheme.onSurface,
             disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
             disabledBorderColor = MaterialTheme.colorScheme.outline
         ),
         shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
     )
-}
-
-private fun priorityWeight(priority: String): Int = when (priority) {
-    "Élevée" -> 0
-    "Moyenne" -> 1
-    "Faible" -> 2
-    else -> 3
 }

@@ -30,7 +30,8 @@ fun RoutineBox(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onStart: (() -> Unit)? = null,
-    isUpcoming: Boolean = false
+    isUpcoming: Boolean = false,
+    forcedDate: Long? = null
 ) {
     val context = LocalContext.current
     val imageName = routine.category.lowercase().replace("é", "e").replace("è", "e").replace("ê", "e").replace("-","_")
@@ -44,16 +45,18 @@ fun RoutineBox(
     val todayTs = todayStart.timeInMillis
 
     // Date de l'occurrence affichée
-    val displayDateTs = if (isUpcoming) {
+    val displayDateTs = forcedDate ?: if (isUpcoming) {
         val tomorrowStart = todayTs + 24 * 3600 * 1000
         routine.getNextOccurrenceTimestamp(tomorrowStart)
     } else {
-        routine.getNextOccurrenceTimestamp()
+        routine.getNextOccurrenceTimestamp(todayTs)
     }
     
     val dateStr = sdf.format(Date(displayDateTs))
     
-    val isCompletedToday = !isUpcoming && routine.lastCompletedDate == todayTs
+    // Un défi est considéré "terminé aujourd'hui" uniquement si on affiche la date d'aujourd'hui (ou avant) 
+    // et qu'il a été complété aujourd'hui.
+    val isCompletedToday = displayDateTs <= todayTs && routine.lastCompletedDate == todayTs
     val isFuture = displayDateTs > todayTs && !isCompletedToday
     val isStarted = (routine.remainingMillis ?: 0L) > 0
 
@@ -69,7 +72,8 @@ fun RoutineBox(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = if (isUpcoming || isCompletedToday) 0.dp else 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val verticalPadding = if (isUpcoming) 12.dp else 16.dp
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = verticalPadding), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
                     Box(modifier = Modifier.size(if (isUpcoming) 44.dp else 52.dp).clip(RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
@@ -81,7 +85,18 @@ fun RoutineBox(
                                 alpha = if (isUpcoming) 0.7f else 1f
                             )
                         } else {
-                            Icon(Icons.Default.FitnessCenter, contentDescription = null, tint = MaterialTheme.colorScheme.primary.copy(alpha = if (isUpcoming) 0.5f else 1f))
+                            val defaultIcon = when(routine.category) {
+                                "Personnel" -> Icons.Default.Person
+                                "Alimentation" -> Icons.Default.Restaurant
+                                "Sport" -> Icons.Default.FitnessCenter
+                                "Travail" -> Icons.Default.Work
+                                "Santé" -> Icons.Default.MedicalServices
+                                "Maison" -> Icons.Default.Home
+                                "Études" -> Icons.Default.School
+                                "Loisirs" -> Icons.Default.Gamepad
+                                else -> Icons.Default.EmojiEvents
+                            }
+                            Icon(defaultIcon, contentDescription = null, tint = MaterialTheme.colorScheme.primary.copy(alpha = if (isUpcoming) 0.5f else 1f))
                         }
                     }
 
@@ -112,7 +127,7 @@ fun RoutineBox(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // On cache modifier SEULEMENT si c'est fini aujourd'hui. On l'autorise pour "A venir"
+                    // On affiche le bouton Modifier sauf si l'instance affichée est déjà terminée
                     if (!isCompletedToday) {
                         IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Modifier", modifier = Modifier.size(20.dp)) }
                     }
@@ -139,10 +154,11 @@ fun RoutineBox(
                             onClick = onStart,
                             modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
                             shape = RoundedCornerShape(10.dp),
-                            enabled = !isFuture
+                            enabled = !isFuture || (displayDateTs > todayTs && routine.isRepetitive)
                         ) {
                             val buttonText = when {
                                 routine.isQuantifiable -> "Ajouter"
+                                routine.isAllDay -> "Terminer"
                                 isStarted -> "Reprendre"
                                 else -> "Démarrer"
                             }
@@ -155,7 +171,8 @@ fun RoutineBox(
                     text = "Prévu pour le $dateStr",
                     style = MaterialTheme.typography.labelSmall,
                     color = SoftViolet.copy(alpha = 0.8f),
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
         }

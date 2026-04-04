@@ -47,29 +47,39 @@ fun HomeScreen(
     todayStart.set(Calendar.MILLISECOND, 0)
     val todayTimestamp = todayStart.timeInMillis
     
-    // Jour de la semaine (1=Lundi, ..., 7=Dimanche)
-    val currentDayOfWeek = if (now.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 7 else now.get(Calendar.DAY_OF_WEEK) - 1
-
-    // Filtrage strict : Seulement ce qui est prévu pour AUJOURD'HUI
-    val todayScheduled = routines.filter { routine ->
-        if (routine.isRepetitive) {
-            routine.repeatDays.contains(currentDayOfWeek)
+    // 1. Liste de TOUS les défis à faire (aujourd'hui et à venir)
+    // On calcule l'instance affichable pour chaque routine
+    val allTodo = routines.map { routine ->
+        val nextOcc = if (routine.lastCompletedDate == todayTimestamp) {
+            // Si déjà fini aujourd'hui, on ne montre que la suivante si répétitif
+            if (routine.isRepetitive) {
+                routine.getNextOccurrenceTimestamp(todayTimestamp + 24 * 3600 * 1000)
+            } else {
+                null // Ponctuel fini
+            }
         } else {
-            routine.scheduledDate == todayTimestamp
+            // Pas encore fini aujourd'hui -> prochaine instance à partir d'aujourd'hui
+            routine.getNextOccurrenceTimestamp(todayTimestamp)
         }
-    }
+        if (nextOcc != null) routine to nextOcc else null
+    }.filterNotNull().sortedWith(
+        compareBy<Pair<RoutineVM, Long>> { it.second } // Tri par DATE d'occurrence
+        .thenBy { priorityWeight(it.first.priority) }  // Puis par PRIORITÉ
+    )
 
-    // On sépare en "À faire" et "Terminé" (exclusivement pour aujourd'hui)
-    val todayTodo = todayScheduled.filter { it.lastCompletedDate != todayTimestamp }.sortedBy { it.startAt }
-    val todayDone = todayScheduled.filter { it.lastCompletedDate == todayTimestamp }.sortedBy { it.startAt }
+    // 2. Liste des défis terminés AUJOURD'HUI
+    val todayDone = routines.filter { routine ->
+        routine.lastCompletedDate == todayTimestamp
+    }.sortedWith(compareBy<RoutineVM> { priorityWeight(it.priority) }.thenBy { it.startAt })
 
-    // Prochains défis (après aujourd'hui) - Max 5
-    val upcoming = routines.filter { routine ->
-        val nextOccurrence = routine.getNextOccurrenceTimestamp(todayTimestamp + 24 * 3600 * 1000)
-        nextOccurrence > todayTimestamp
-    }.sortedBy { 
-        it.getNextOccurrenceTimestamp(todayTimestamp + 24 * 3600 * 1000) 
-    }.take(5)
+    // 3. Highlight "Prochainement" (uniquement les 5 suivants strictement après aujourd'hui)
+    val upcomingHighlight = routines.filter { routine ->
+        val nextOcc = routine.getNextOccurrenceTimestamp(todayTimestamp + 24 * 3600 * 1000)
+        nextOcc > todayTimestamp
+    }.sortedWith(
+        compareBy<RoutineVM> { it.getNextOccurrenceTimestamp(todayTimestamp + 24 * 3600 * 1000) }
+        .thenBy { priorityWeight(it.priority) }
+    ).take(5)
 
     Column(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
@@ -79,85 +89,112 @@ fun HomeScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Section défis à réaliser aujourd'hui
-            if (todayTodo.isNotEmpty()) {
-                item {
-                    SectionHeader("Mes défis", "À faire")
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-                items(todayTodo) { routine ->
-                    RoutineBox(
-                        routine = routine,
-                        onEdit = { /* ... */ },
-                        onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
-                        onStart = {
-                            if (routine.isQuantifiable) updatingRoutineValue = routine
-                            else navController.navigate("${AppPage.Timer.name}/${routine.id}")
-                        }
-                    )
-                }
-            }
-
-            // Section défis du jour terminés
-            if (todayDone.isNotEmpty()) {
-                item {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    SectionHeader("Défis du jour terminés", "Bravo")
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-                items(todayDone) { routine ->
-                    RoutineBox(
-                        routine = routine,
-                        onEdit = { /* ... */ },
-                        onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) }
-                    )
-                }
-            }
-
-            // Message si rien à faire
-            if (todayTodo.isEmpty() && todayDone.isEmpty()) {
-                item {
-                    SectionHeader("Défi du jour", "Libre")
+            // Section "Mes défis" - Montre tout ce qui est à faire (Ajd + Futur)
+            item {
+                SectionHeader("Mes défis", "À faire")
+                Spacer(modifier = Modifier.height(8.dp))
+                if (allTodo.isEmpty()) {
                     Card(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                     ) {
-                        Text("Aucun défi prévu pour aujourd'hui.", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Aucun défi à réaliser.",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
-
-            // Section Prochainement (max 5)
-            if (upcoming.isNotEmpty()) {
-                item {
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Prochains défis", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        TextButton(onClick = { navController.navigate(AppPage.Routines.name) }) {
-                            Text("Voir tout", color = SoftViolet)
+            items(allTodo) { (routine, nextOcc) ->
+                RoutineBox(
+                    routine = routine,
+                    onEdit = { /* ... */ },
+                    onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
+                    isUpcoming = nextOcc > todayTimestamp, // DA épurée si futur
+                    forcedDate = nextOcc,
+                    onStart = {
+                        if (routine.isQuantifiable) updatingRoutineValue = routine
+                        else if (routine.isAllDay) {
+                            viewModel.onEvent(RoutineUiEvent.UpdateRoutine(routine.copy(lastCompletedDate = todayTimestamp, progress = 100)))
                         }
+                        else navController.navigate("${AppPage.Timer.name}/${routine.id}")
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                )
+            }
+
+            // Section "Défis terminés"
+            item {
+                Spacer(modifier = Modifier.height(12.dp))
+                SectionHeader("Défis du jour terminés", if (todayDone.isNotEmpty()) "Bravo" else "")
+                Spacer(modifier = Modifier.height(4.dp))
+                if (todayDone.isEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    ) {
+                        Text(
+                            "Vous n'avez pas encore terminé de défi aujourd'hui.",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                items(upcoming) { routine ->
-                    RoutineBox(
-                        routine = routine,
-                        onEdit = { /* ... */ },
-                        onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
-                        isUpcoming = true,
-                        onStart = {
-                            if (routine.isQuantifiable) updatingRoutineValue = routine
-                            else navController.navigate("${AppPage.Timer.name}/${routine.id}")
-                        }
-                    )
+            }
+            items(todayDone) { routine ->
+                RoutineBox(
+                    routine = routine,
+                    onEdit = { /* ... */ },
+                    onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) }
+                )
+            }
+
+            // Section "Prochainement" - Highlight
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Prochains défis", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = { navController.navigate(AppPage.Routines.name) }) {
+                        Text("Voir tout", color = SoftViolet)
+                    }
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                if (upcomingHighlight.isEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    ) {
+                        Text(
+                            "Rien de prévu prochainement.",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            items(upcomingHighlight) { routine ->
+                RoutineBox(
+                    routine = routine,
+                    onEdit = { /* ... */ },
+                    onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
+                    isUpcoming = true,
+                    onStart = {
+                        if (routine.isQuantifiable) updatingRoutineValue = routine
+                        else navController.navigate("${AppPage.Timer.name}/${routine.id}")
+                    }
+                )
             }
         }
     }
@@ -283,17 +320,26 @@ fun SectionHeader(title: String, tag: String) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Surface(
-            color = if (tag == "Bravo") Color(0xFF4CAF50).copy(alpha = 0.1f) else Color(0xFF2DCE89).copy(alpha = 0.1f),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Text(
-                tag, 
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                color = if (tag == "Bravo") Color(0xFF2E7D32) else Color(0xFF2DCE89),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
+        if (tag.isNotBlank()) {
+            Surface(
+                color = if (tag == "Bravo") Color(0xFF4CAF50).copy(alpha = 0.1f) else Color(0xFF2DCE89).copy(alpha = 0.1f),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    tag, 
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = if (tag == "Bravo") Color(0xFF2E7D32) else Color(0xFF2DCE89),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
+}
+
+private fun priorityWeight(priority: String): Int = when (priority) {
+    "Élevée" -> 0
+    "Moyenne" -> 1
+    "Faible" -> 2
+    else -> 3
 }

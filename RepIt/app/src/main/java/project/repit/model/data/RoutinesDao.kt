@@ -18,6 +18,9 @@ interface RoutinesDao {
     @Query("SELECT * FROM routines WHERE id = :id")
     suspend fun getRoutineById(id: String): Routine?
 
+    @Query("SELECT * FROM routines WHERE category = :category")
+    suspend fun getRoutinesByCategory(category: String): List<Routine>
+
     @Upsert
     suspend fun upsertRoutine(routine: Routine)
 
