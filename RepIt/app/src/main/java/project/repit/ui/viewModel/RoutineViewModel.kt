@@ -1,8 +1,7 @@
 package project.repit.ui.viewModel
-
+ 
 import android.app.Application
 import androidx.compose.runtime.State
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,27 +17,28 @@ import project.repit.model.domain.useCase.UpsertRoutineUseCase
 import project.repit.model.domain.useCase.DeleteRoutineUseCase
 import project.repit.models.RoutineRepository
 import java.util.Calendar
-
+ 
 class RoutineViewModel(application: Application) : AndroidViewModel(application) {
-    
+ 
     private val routinesUseCases: RoutinesUseCases
+ 
+    // Liste brute de toutes les routines
     private val _routines = mutableStateOf<List<RoutineVM>>(emptyList())
     val routines: State<List<RoutineVM>> = _routines
-
+ 
+    // Catégorie sélectionnée pour le filtre
     private val _selectedCategory = mutableStateOf("Tous")
     val selectedCategory: State<String> = _selectedCategory
-
-    // Partitionnement réactif des routines
-    val todayRoutines: State<List<RoutineVM>> = derivedStateOf {
-        getPartitionedRoutines(isToday = true)
-    }
-
-    val upcomingRoutines: State<List<RoutineVM>> = derivedStateOf {
-        getPartitionedRoutines(isToday = false)
-    }
-
+ 
+    // Routines partitionnées — recalculées explicitement à chaque changement
+    private val _todayRoutines = mutableStateOf<List<RoutineVM>>(emptyList())
+    val todayRoutines: State<List<RoutineVM>> = _todayRoutines
+ 
+    private val _upcomingRoutines = mutableStateOf<List<RoutineVM>>(emptyList())
+    val upcomingRoutines: State<List<RoutineVM>> = _upcomingRoutines
+ 
     private var getRoutinesJob: Job? = null
-
+ 
     init {
         val dao = AppDatabase.getDatabase(application).routineDao()
         val repository = RoutineRepository(dao)
@@ -50,52 +50,81 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
         )
         loadRoutines()
     }
-
+ 
     fun onEvent(event: RoutineUiEvent) {
         when (event) {
-            is RoutineUiEvent.AddRoutine -> viewModelScope.launch { routinesUseCases.upsertRoutine(event.routine.toEntity()) }
-            is RoutineUiEvent.UpdateRoutine -> viewModelScope.launch { routinesUseCases.upsertRoutine(event.routine.toEntity()) }
-            is RoutineUiEvent.DeleteRoutine -> viewModelScope.launch { routinesUseCases.deleteRoutine(event.routine.toEntity()) }
-            is RoutineUiEvent.FilterByCategory -> _selectedCategory.value = event.category
+            is RoutineUiEvent.AddRoutine -> viewModelScope.launch {
+                routinesUseCases.upsertRoutine(event.routine.toEntity())
+            }
+            is RoutineUiEvent.UpdateRoutine -> viewModelScope.launch {
+                routinesUseCases.upsertRoutine(event.routine.toEntity())
+            }
+            is RoutineUiEvent.DeleteRoutine -> viewModelScope.launch {
+                routinesUseCases.deleteRoutine(event.routine.toEntity())
+            }
+            is RoutineUiEvent.FilterByCategory -> {
+                _selectedCategory.value = event.category
+                // Recalculer les listes avec le nouveau filtre
+                updatePartitionedLists(_routines.value)
+            }
         }
     }
-
+ 
     private fun loadRoutines() {
         getRoutinesJob?.cancel()
         getRoutinesJob = routinesUseCases.getRoutines().onEach { routineEntities ->
-            _routines.value = routineEntities.map { RoutineVM.fromEntity(it) }
+            val vms = routineEntities.map { RoutineVM.fromEntity(it) }
+            _routines.value = vms
+            updatePartitionedLists(vms)
         }.launchIn(viewModelScope)
     }
-
-    private fun getPartitionedRoutines(isToday: Boolean): List<RoutineVM> {
+ 
+    /**
+     * Recalcule todayRoutines et upcomingRoutines à partir de la liste fournie.
+     * Appelé à chaque fois que _routines ou _selectedCategory change.
+     */
+    private fun updatePartitionedLists(allRoutines: List<RoutineVM>) {
         val calendar = Calendar.getInstance()
         val todayTs = calendar.run {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
             timeInMillis
         }
-        val currentDayOfWeek = if (calendar.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 7 else calendar.get(Calendar.DAY_OF_WEEK) - 1
-
-        val filtered = if (_selectedCategory.value == "Tous") _routines.value else _routines.value.filter { it.category == _selectedCategory.value }
-
+        val currentDayOfWeek = if (calendar.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 7
+                               else calendar.get(Calendar.DAY_OF_WEEK) - 1
+ 
+        val filtered = if (_selectedCategory.value == "Tous") allRoutines
+                       else allRoutines.filter { it.category == _selectedCategory.value }
+ 
         val (today, upcoming) = filtered.partition { routine ->
             if (routine.isRepetitive) {
                 routine.repeatDays.contains(currentDayOfWeek)
             } else {
                 val sched = routine.scheduledDate ?: routine.createdAt
-                val cal = Calendar.getInstance().apply { timeInMillis = sched }
-                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+                val cal = Calendar.getInstance().apply {
+                    timeInMillis = sched
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
                 cal.timeInMillis <= todayTs
             }
         }
-
-        val resultList = if (isToday) today else upcoming
-        
-        return resultList.sortedWith(
+ 
+        _todayRoutines.value = today.sortedWith(
             compareBy<RoutineVM> { it.getNextOccurrenceTimestamp() }
-            .thenBy { priorityWeight(it.priority) }
+                .thenBy { priorityWeight(it.priority) }
+        )
+ 
+        _upcomingRoutines.value = upcoming.sortedWith(
+            compareBy<RoutineVM> { it.getNextOccurrenceTimestamp() }
+                .thenBy { priorityWeight(it.priority) }
         )
     }
-
+ 
     private fun priorityWeight(priority: String): Int = when (priority) {
         "Élevée" -> 0
         "Moyenne" -> 1
