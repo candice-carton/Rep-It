@@ -49,7 +49,8 @@ data class RoutineVM(
     val targetValue: Float = 0f,
     val currentValue: Float = 0f,
     val unit: String = "",
-    val scheduledDate: Long? = null
+    val scheduledDate: Long? = null,
+    val isDailySuggestion: Boolean = false
 ) {
     /**
      * Calcule le timestamp (à minuit) de la prochaine occurrence de cette routine.
@@ -132,7 +133,8 @@ data class RoutineVM(
                 targetValue = routine.targetValue,
                 currentValue = routine.currentValue,
                 unit = routine.unit,
-                scheduledDate = routine.scheduledDate
+                scheduledDate = routine.scheduledDate,
+                isDailySuggestion = routine.isDailySuggestion
             )
         }
     }
@@ -162,6 +164,7 @@ fun RoutineVM.toEntity(): Routine {
         targetValue = this.targetValue,
         currentValue = this.currentValue,
         unit = this.unit,
-        scheduledDate = this.scheduledDate
+        scheduledDate = this.scheduledDate,
+        isDailySuggestion = this.isDailySuggestion
     )
 }

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import project.repit.model.data.AppDatabase
 import project.repit.model.data.RoutineRepository
+import project.repit.model.data.UserPreferences
 import project.repit.model.data.remote.OpenMeteoWeatherRepository
 import project.repit.model.data.sensor.PedometerDataSource
 import project.repit.model.domain.model.ChallengeDifficulty
@@ -26,6 +27,9 @@ import project.repit.model.domain.useCase.GetRoutinesUseCase
 import project.repit.model.domain.useCase.RoutinesUseCases
 import project.repit.model.domain.useCase.UpsertRoutineUseCase
 import java.util.Calendar
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -33,6 +37,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val weatherRepository = OpenMeteoWeatherRepository()
     private val pedometerDataSource = PedometerDataSource(application)
     private val generateDailyChallengeUseCase = GenerateDailyChallengeUseCase()
+    private val userPreferences = UserPreferences(application)
 
     private var getRoutinesJob: Job? = null
     private val _routines = mutableStateOf<List<RoutineVM>>(emptyList())
@@ -60,6 +65,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isCurrentChallengeAdded = mutableStateOf(false)
     val isCurrentChallengeAdded: State<Boolean> = _isCurrentChallengeAdded
+    private val _dailyChallengeMessage = mutableStateOf<String?>(null)
+    val dailyChallengeMessage: State<String?> = _dailyChallengeMessage
+
+    private val _profileName = mutableStateOf(userPreferences.getProfileName())
+    val profileName: State<String> = _profileName
+
+    private val _profileAvatarUri = mutableStateOf(userPreferences.getProfileAvatarUri())
+    val profileAvatarUri: State<String?> = _profileAvatarUri
+
+    private val _streakDays = mutableIntStateOf(0)
+    val streakDays: State<Int> = _streakDays
 
     private val _isStepCounterAvailable = mutableStateOf(pedometerDataSource.hasStepCounter)
     val isStepCounterAvailable: State<Boolean> = _isStepCounterAvailable
@@ -109,7 +125,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshDailyChallenge() {
         refreshToken += 1
         _dailyChallenge.value = generateDailyChallengeUseCase(
-            difficulty = _selectedDifficulty.value,
+            difficulty = adaptDifficultyToUserStats(_selectedDifficulty.value, _routines.value),
             weather = _weatherInfo.value,
             refreshToken = refreshToken
         )
@@ -124,6 +140,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
+        val todayEpochDay = LocalDate.now().toEpochDay()
+
+        if (userPreferences.getLastDailyChallengeEpochDay() == todayEpochDay) {
+            _dailyChallengeMessage.value = "Tu as déjà ajouté ton défi du jour."
+            return
+        }
 
         val category = when (suggestion.difficulty) {
             ChallengeDifficulty.FACILE -> "Bien-être"
@@ -144,9 +166,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         else -> "Faible"
                     },
                     isAllDay = true,
-                    scheduledDate = todayTs
+                    scheduledDate = todayTs,
+                    isDailySuggestion = true
                 )
             )
+            userPreferences.setLastDailyChallengeEpochDay(todayEpochDay)
+            _dailyChallengeMessage.value = "Défi du jour ajouté ✅"
         }
     }
 
@@ -159,7 +184,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             _dailyChallenge.value = generateDailyChallengeUseCase(
-                difficulty = _selectedDifficulty.value,
+                difficulty = adaptDifficultyToUserStats(_selectedDifficulty.value, _routines.value),
                 weather = _weatherInfo.value,
                 refreshToken = refreshToken
             )
@@ -185,9 +210,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun syncChallengeAddedState() {
         val suggestion = _dailyChallenge.value
-        _isCurrentChallengeAdded.value = suggestion != null && _routines.value.any {
+        val addedToday = userPreferences.getLastDailyChallengeEpochDay() == LocalDate.now().toEpochDay()
+        _isCurrentChallengeAdded.value = addedToday || (suggestion != null && _routines.value.any {
             it.name == suggestion.title && it.description == suggestion.description
-        }
+        })
     }
 
     private fun computeHomeData(routines: List<RoutineVM>) {
@@ -212,13 +238,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _doneRoutines.value = routines.filter { it.lastCompletedDate == todayTs }
             .sortedWith(compareBy<RoutineVM> { priorityWeight(it.priority) }.thenBy { it.startAt })
 
-        _upcomingHighlights.value = routines.filter {
-            val next = it.getNextOccurrenceTimestamp(todayTs + 86400000)
+        _upcomingHighlights.value = routines.map { routine ->
+            val nextOccurrence = routine.getNextOccurrenceTimestamp(todayTs)
+            if (routine.isRepetitive && nextOccurrence == todayTs) {
+                routine to routine.getNextOccurrenceTimestamp(todayTs + 86400000)
+            } else {
+                routine to nextOccurrence
+            }
+        }.filter { (_, next) ->
             next > todayTs
         }.sortedWith(
-            compareBy<RoutineVM> { it.getNextOccurrenceTimestamp(todayTs + 86400000) }
-                .thenBy { priorityWeight(it.priority) }
-        ).take(5)
+            compareBy<Pair<RoutineVM, Long>> { it.second }
+                .thenBy { priorityWeight(it.first.priority) }
+        ).map { it.first }.take(5)
+
+        _streakDays.intValue = computeStreakDays(routines)
     }
 
     private fun priorityWeight(priority: String): Int = when (priority) {
@@ -237,6 +271,46 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             WeatherCondition.UNKNOWN -> "Variable"
         }
         return "$condition, ${weather.temperatureCelsius}°C"
+    }
+
+    fun refreshProfileData() {
+        _profileName.value = userPreferences.getProfileName()
+        _profileAvatarUri.value = userPreferences.getProfileAvatarUri()
+    }
+
+    fun clearDailyChallengeMessage() {
+        _dailyChallengeMessage.value = null
+    }
+
+    private fun adaptDifficultyToUserStats(
+        requestedDifficulty: ChallengeDifficulty,
+        routines: List<RoutineVM>
+    ): ChallengeDifficulty {
+        val completedHardCount = routines.count {
+            it.lastCompletedDate != null && it.priority == "Élevée" && it.progress >= 100
+        }
+
+        return when {
+            completedHardCount >= 20 -> ChallengeDifficulty.DIFFICILE
+            completedHardCount >= 10 && requestedDifficulty == ChallengeDifficulty.FACILE -> ChallengeDifficulty.MOYEN
+            else -> requestedDifficulty
+        }
+    }
+
+    private fun computeStreakDays(routines: List<RoutineVM>): Int {
+        val zone = ZoneId.systemDefault()
+        val completedDays = routines.filter { it.isDailySuggestion }
+            .mapNotNull { it.lastCompletedDate }
+            .map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
+            .toSet()
+
+        var streak = 0
+        var cursor = LocalDate.now()
+        while (completedDays.contains(cursor)) {
+            streak += 1
+            cursor = cursor.minusDays(1)
+        }
+        return streak
     }
 
     override fun onCleared() {
