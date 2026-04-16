@@ -1,7 +1,7 @@
 package project.repit.model.domain.useCase
 
 import project.repit.model.domain.model.Routine
-import project.repit.models.RoutineRepository
+import project.repit.model.data.RoutineRepository
 
 /**
  * Exception personnalisée pour les erreurs liées aux routines.

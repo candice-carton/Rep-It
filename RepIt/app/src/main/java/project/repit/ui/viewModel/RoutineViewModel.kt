@@ -15,25 +15,44 @@ import project.repit.model.domain.useCase.GetRoutinesUseCase
 import project.repit.model.domain.useCase.GetRoutineUseCase
 import project.repit.model.domain.useCase.UpsertRoutineUseCase
 import project.repit.model.domain.useCase.DeleteRoutineUseCase
-import project.repit.models.RoutineRepository
+import project.repit.model.data.RoutineRepository
 import java.util.Calendar
  
+/**
+ * ViewModel responsable de la gestion de la logique métier et de l'état de l'interface
+ * pour l'écran des routines.
+ *
+ * Il gère la récupération, le filtrage par catégorie et la partition des routines
+ * en deux groupes : "Aujourd'hui" et "À venir".
+ *
+ * @param application L'instance de l'application nécessaire pour initialiser la base de données.
+ */
 class RoutineViewModel(application: Application) : AndroidViewModel(application) {
  
     private val routinesUseCases: RoutinesUseCases
  
-    // Liste brute de toutes les routines
+    /**
+     * Liste brute de toutes les routines récupérées depuis la base de données.
+     */
     private val _routines = mutableStateOf<List<RoutineVM>>(emptyList())
     val routines: State<List<RoutineVM>> = _routines
  
-    // Catégorie sélectionnée pour le filtre
+    /**
+     * Catégorie actuellement sélectionnée pour filtrer la liste des routines.
+     * Valeur par défaut : "Tous".
+     */
     private val _selectedCategory = mutableStateOf("Tous")
     val selectedCategory: State<String> = _selectedCategory
  
-    // Routines partitionnées — recalculées explicitement à chaque changement
+    /**
+     * Liste des routines prévues pour aujourd'hui (ou répétitives le jour actuel).
+     */
     private val _todayRoutines = mutableStateOf<List<RoutineVM>>(emptyList())
     val todayRoutines: State<List<RoutineVM>> = _todayRoutines
  
+    /**
+     * Liste des routines prévues pour les jours futurs.
+     */
     private val _upcomingRoutines = mutableStateOf<List<RoutineVM>>(emptyList())
     val upcomingRoutines: State<List<RoutineVM>> = _upcomingRoutines
  
@@ -51,6 +70,11 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
         loadRoutines()
     }
  
+    /**
+     * Point d'entrée pour tous les événements utilisateur provenant de l'interface.
+     *
+     * @param event L'événement utilisateur à traiter (Ajout, Mise à jour, Suppression, Filtre).
+     */
     fun onEvent(event: RoutineUiEvent) {
         when (event) {
             is RoutineUiEvent.AddRoutine -> viewModelScope.launch {
@@ -70,6 +94,10 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
         }
     }
  
+    /**
+     * S'abonne au flux de données des routines provenant du repository.
+     * Met à jour l'état local dès qu'une modification intervient en base de données.
+     */
     private fun loadRoutines() {
         getRoutinesJob?.cancel()
         getRoutinesJob = routinesUseCases.getRoutines().onEach { routineEntities ->
@@ -82,6 +110,9 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
     /**
      * Recalcule todayRoutines et upcomingRoutines à partir de la liste fournie.
      * Appelé à chaque fois que _routines ou _selectedCategory change.
+     * Le tri est effectué par date d'occurrence, puis par poids de priorité.
+     *
+     * @param allRoutines La liste complète des routines à traiter.
      */
     private fun updatePartitionedLists(allRoutines: List<RoutineVM>) {
         val calendar = Calendar.getInstance()
@@ -125,6 +156,13 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
         )
     }
  
+    /**
+     * Associe une valeur numérique à chaque niveau de priorité pour faciliter le tri.
+     * Une valeur plus faible indique une priorité plus élevée.
+     *
+     * @param priority Le libellé de la priorité ("Élevée", "Moyenne", "Faible").
+     * @return Le poids numérique correspondant.
+     */
     private fun priorityWeight(priority: String): Int = when (priority) {
         "Élevée" -> 0
         "Moyenne" -> 1

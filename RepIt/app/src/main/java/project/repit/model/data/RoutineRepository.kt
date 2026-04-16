@@ -1,7 +1,6 @@
-package project.repit.models
+package project.repit.model.data
 
 import kotlinx.coroutines.flow.Flow
-import project.repit.model.data.RoutinesDao
 import project.repit.model.domain.model.Routine
 import project.repit.model.domain.model.RoutineHistory
 

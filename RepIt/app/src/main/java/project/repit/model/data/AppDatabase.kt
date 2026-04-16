@@ -25,6 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "repit_database"
                 )
+                .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance
                 instance

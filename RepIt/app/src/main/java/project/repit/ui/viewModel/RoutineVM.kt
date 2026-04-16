@@ -5,7 +5,29 @@ import java.util.UUID
 import java.util.Calendar
 
 /**
- * Objet d'affichage (équivalent de RoutineVM).
+ * Représente une vue simplifiée d'une routine (ou défi) pour l'interface utilisateur.
+ * Cette classe fait le pont entre le modèle de données du domaine et les besoins d'affichage.
+ *
+ * @property id Identifiant unique de la routine.
+ * @property name Nom de la routine.
+ * @property description Description détaillée.
+ * @property category Catégorie de la routine (ex: Santé, Sport, Travail).
+ * @property startAt Heure de début formatée.
+ * @property endAt Heure de fin formatée.
+ * @property isAllDay Indique si la routine dure toute la journée.
+ * @property periodicity Périodicité (Quotidienne, Hebdomadaire, etc.).
+ * @property priority Niveau de priorité.
+ * @property progress Pourcentage de progression (0-100).
+ * @property isRepetitive Indique si la routine se répète sur plusieurs jours.
+ * @property repeatDays Liste des jours de répétition (1=Lundi, 7=Dimanche).
+ * @property remainingMillis Temps restant en millisecondes pour un minuteur associé.
+ * @property createdAt Timestamp de création.
+ * @property lastCompletedDate Timestamp de la dernière complétion (à minuit).
+ * @property isQuantifiable Indique si la routine a un objectif chiffré.
+ * @property targetValue Valeur cible à atteindre.
+ * @property currentValue Valeur actuelle atteinte.
+ * @property unit Unité de mesure (ex: km, verres d'eau).
+ * @property scheduledDate Date prévue pour une routine ponctuelle.
  */
 data class RoutineVM(
     val id: String = UUID.randomUUID().toString(),
@@ -30,7 +52,11 @@ data class RoutineVM(
     val scheduledDate: Long? = null
 ) {
     /**
-     * Calcule le timestamp (à minuit) de la prochaine occurrence de ce défi.
+     * Calcule le timestamp (à minuit) de la prochaine occurrence de cette routine.
+     * Prend en compte si la routine est répétitive ou ponctuelle, et si elle a déjà été complétée aujourd'hui.
+     *
+     * @param fromTimeMillis Le point de référence temporel pour le calcul.
+     * @return Le timestamp en millisecondes du jour de la prochaine occurrence.
      */
     fun getNextOccurrenceTimestamp(fromTimeMillis: Long = System.currentTimeMillis()): Long {
         val now = Calendar.getInstance()
@@ -82,6 +108,9 @@ data class RoutineVM(
     }
 
     companion object {
+        /**
+         * Convertit une entité de domaine Routine en RoutineVM.
+         */
         fun fromEntity(routine: Routine): RoutineVM {
             return RoutineVM(
                 id = routine.id,
@@ -109,6 +138,9 @@ data class RoutineVM(
     }
 }
 
+/**
+ * Extension pour convertir une RoutineVM vers l'entité de domaine Routine.
+ */
 fun RoutineVM.toEntity(): Routine {
     return Routine(
         id = this.id,

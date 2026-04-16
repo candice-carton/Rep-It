@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 import project.repit.MainActivity
 import project.repit.model.data.AppDatabase
 import project.repit.model.domain.model.RoutineHistory
-import project.repit.models.RoutineRepository
+import project.repit.model.data.RoutineRepository
 
 /**
  * Service gérant le minuteur des défis en arrière-plan.

@@ -7,6 +7,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+/**
+ * Champ de saisie avec un menu déroulant (Dropdown).
+ * Idéal pour sélectionner une option parmi une liste prédéfinie (catégories, priorités, etc.).
+ *
+ * @param label Libellé affiché au-dessus ou à l'intérieur du champ.
+ * @param options Liste des chaînes de caractères à proposer dans le menu.
+ * @param selectedOption L'option actuellement sélectionnée.
+ * @param onOptionSelected Callback déclenché lorsqu'une nouvelle option est choisie.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DropdownField(
@@ -16,6 +25,7 @@ fun DropdownField(
     onOptionSelected: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = !expanded }

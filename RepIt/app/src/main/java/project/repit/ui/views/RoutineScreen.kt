@@ -40,8 +40,11 @@ private val CATEGORIES = listOf("Santé", "Sport", "Bien-être", "Alimentation",
 private val PRIORITIES = listOf("Élevée", "Moyenne", "Faible")
 
 /**
- * Écran de gestion des routines suivant l'architecture MVVM avec UiEvents.
- * La logique de filtrage et de partitionnement est désormais gérée dans le ViewModel.
+ * Écran principal de gestion des routines.
+ * Permet de visualiser les routines par catégorie, de les ajouter, les modifier ou les supprimer.
+ *
+ * @param navController Contrôleur utilisé pour la navigation entre les écrans.
+ * @param viewModel Le ViewModel gérant l'état et la logique des routines.
  */
 @Composable
 fun RoutineScreen(
@@ -59,6 +62,7 @@ fun RoutineScreen(
     var updatingRoutineValue by remember { mutableStateOf<RoutineVM?>(null) }
     var isAddingRoutine by remember { mutableStateOf(false) }
     
+    // Gestion des permissions pour les notifications (Android 13+)
     var hasNotificationPermission by remember {
         mutableStateOf(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -72,8 +76,8 @@ fun RoutineScreen(
         onResult = { isGranted -> hasNotificationPermission = isGranted }
     )
 
-    // --- UI ---
     Column(modifier = Modifier.fillMaxSize()) {
+        // Barre de filtres par catégorie
         CategoryTabs(
             categories = listOf("Tous") + CATEGORIES,
             selectedCategory = selectedCategory,
@@ -87,16 +91,13 @@ fun RoutineScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "Mes Défis", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Button(onClick = { isAddingRoutine = true }) { Text("Nouveau") }
-                }
+                HeaderRow(onAddClick = { isAddingRoutine = true })
             }
 
             if (todayRoutines.isEmpty() && upcomingRoutines.isEmpty()) {
-                item { Text("Aucun défi trouvé.", modifier = Modifier.padding(16.dp)) }
+                item { EmptyStateMessage() }
             } else {
-                // SECTION : AUJOURD'HUI
+                // Section des routines prévues pour aujourd'hui
                 if (todayRoutines.isNotEmpty()) {
                     item { SectionHeader("Défis du jour", MaterialTheme.colorScheme.primary) }
                     items(todayRoutines, key = { it.id }) { routine ->
@@ -111,7 +112,7 @@ fun RoutineScreen(
                     }
                 }
 
-                // SECTION : À VENIR
+                // Section des routines à venir
                 if (upcomingRoutines.isNotEmpty()) {
                     item { SectionHeader("Prochains défis", MaterialTheme.colorScheme.secondary) }
                     items(upcomingRoutines, key = { it.id }) { routine ->
@@ -130,7 +131,7 @@ fun RoutineScreen(
         }
     }
 
-    // --- DIALOGUES ---
+    // --- Dialogues de gestion ---
     if (isAddingRoutine) {
         AddRoutineDialog(
             onDismiss = { isAddingRoutine = false },
@@ -164,8 +165,42 @@ fun RoutineScreen(
     }
 }
 
-// --- SOUS-COMPOSANTS UI ---
+/**
+ * Affiche l'en-tête de la liste avec le titre et le bouton d'ajout.
+ */
+@Composable
+private fun HeaderRow(onAddClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "Mes Défis",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Button(onClick = onAddClick) {
+            Text("Nouveau")
+        }
+    }
+}
 
+/**
+ * Message affiché lorsqu'aucune routine n'est présente.
+ */
+@Composable
+private fun EmptyStateMessage() {
+    Text(
+        text = "Aucun défi trouvé.",
+        modifier = Modifier.padding(16.dp),
+        style = MaterialTheme.typography.bodyMedium
+    )
+}
+
+/**
+ * Barre horizontale permettant de filtrer les routines par catégorie.
+ */
 @Composable
 private fun CategoryTabs(
     categories: List<String>,
@@ -189,6 +224,9 @@ private fun CategoryTabs(
     }
 }
 
+/**
+ * En-tête de section (Aujourd'hui / À venir).
+ */
 @Composable
 private fun SectionHeader(text: String, color: Color) {
     Text(
@@ -200,6 +238,9 @@ private fun SectionHeader(text: String, color: Color) {
     )
 }
 
+/**
+ * Élément individuel représentant une routine dans la liste.
+ */
 @Composable
 private fun RoutineItem(
     routine: RoutineVM,
@@ -215,8 +256,9 @@ private fun RoutineItem(
     )
 }
 
-// --- LOGIQUE MÉTIER UI ---
-
+/**
+ * Gère le démarrage d'une routine en fonction de son type (quantifiable, toute la journée, avec minuteur).
+ */
 private fun handleRoutineStart(
     routine: RoutineVM,
     hasNotificationPermission: Boolean,
@@ -241,6 +283,9 @@ private fun handleRoutineStart(
     }
 }
 
+/**
+ * Dialogue permettant de mettre à jour la valeur actuelle d'un défi quantifiable.
+ */
 @Composable
 private fun UpdateValueDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit) {
     var newValue by remember { mutableStateOf("") }
@@ -282,6 +327,9 @@ private fun UpdateValueDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave:
     )
 }
 
+/**
+ * Dialogue de modification d'une routine existante.
+ */
 @Composable
 private fun EditRoutineDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit) {
     var name by remember(routine) { mutableStateOf(routine.name) }
@@ -364,6 +412,9 @@ private fun EditRoutineDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave:
     )
 }
 
+/**
+ * Dialogue permettant de créer une nouvelle routine.
+ */
 @Composable
 private fun AddRoutineDialog(onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit) {
     var name by remember { mutableStateOf("") }
@@ -448,6 +499,9 @@ private fun AddRoutineDialog(onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit)
     )
 }
 
+/**
+ * Champ de saisie affichant un sélecteur de date (DatePicker).
+ */
 @Composable
 fun DatePickerField(label: String, selectedDate: Long?, onDateSelected: (Long) -> Unit) {
     val context = LocalContext.current
@@ -477,6 +531,9 @@ fun DatePickerField(label: String, selectedDate: Long?, onDateSelected: (Long) -
     )
 }
 
+/**
+ * Champ de saisie affichant un sélecteur d'heure (TimePicker).
+ */
 @Composable
 fun TimePickerField(label: String, currentTime: String, onTimeSelected: (String) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
