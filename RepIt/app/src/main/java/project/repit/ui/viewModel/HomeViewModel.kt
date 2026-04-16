@@ -16,6 +16,7 @@ import project.repit.model.data.remote.OpenMeteoWeatherRepository
 import project.repit.model.data.sensor.PedometerDataSource
 import project.repit.model.domain.model.ChallengeDifficulty
 import project.repit.model.domain.model.DailyChallengeSuggestion
+import project.repit.model.domain.model.Routine
 import project.repit.model.domain.model.WeatherCondition
 import project.repit.model.domain.model.WeatherInfo
 import project.repit.model.domain.useCase.DeleteRoutineUseCase
@@ -26,9 +27,6 @@ import project.repit.model.domain.useCase.RoutinesUseCases
 import project.repit.model.domain.useCase.UpsertRoutineUseCase
 import java.util.Calendar
 
-/**
- * ViewModel dédié à l'écran d'accueil (Home).
- */
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val routinesUseCases: RoutinesUseCases
@@ -37,7 +35,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val generateDailyChallengeUseCase = GenerateDailyChallengeUseCase()
 
     private var getRoutinesJob: Job? = null
-
     private val _routines = mutableStateOf<List<RoutineVM>>(emptyList())
 
     private val _todoRoutines = mutableStateOf<List<Pair<RoutineVM, Long>>>(emptyList())
@@ -61,6 +58,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _dailyChallenge = mutableStateOf<DailyChallengeSuggestion?>(null)
     val dailyChallenge: State<DailyChallengeSuggestion?> = _dailyChallenge
 
+    private val _isCurrentChallengeAdded = mutableStateOf(false)
+    val isCurrentChallengeAdded: State<Boolean> = _isCurrentChallengeAdded
+
+    private val _isStepCounterAvailable = mutableStateOf(pedometerDataSource.hasStepCounter)
+    val isStepCounterAvailable: State<Boolean> = _isStepCounterAvailable
+
     private var refreshToken = 0
 
     init {
@@ -75,7 +78,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         observeRoutines()
         observeSteps()
         fetchWeatherAndRefreshChallenge()
-        pedometerDataSource.start()
     }
 
     fun onEvent(event: RoutineUiEvent) {
@@ -87,6 +89,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 routinesUseCases.upsertRoutine(event.routine.toEntity())
             }
             else -> Unit
+        }
+    }
+
+    fun onActivityRecognitionPermissionChanged(granted: Boolean) {
+        if (granted && _isStepCounterAvailable.value) {
+            pedometerDataSource.start()
+        } else {
+            pedometerDataSource.stop()
+            _stepsToday.intValue = 0
         }
     }
 
@@ -102,16 +113,57 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             weather = _weatherInfo.value,
             refreshToken = refreshToken
         )
+        syncChallengeAddedState()
     }
 
-    fun fetchWeatherAndRefreshChallenge(latitude: Double = 45.5017, longitude: Double = -73.5673) {
+    fun addSelectedDailyChallengeToRoutines() {
+        val suggestion = _dailyChallenge.value ?: return
+        val todayTs = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val category = when (suggestion.difficulty) {
+            ChallengeDifficulty.FACILE -> "Bien-être"
+            ChallengeDifficulty.MOYEN -> "Personnel"
+            ChallengeDifficulty.DIFFICILE -> "Sport"
+        }
+
         viewModelScope.launch {
-            _weatherInfo.value = weatherRepository.getCurrentWeather(latitude, longitude)
+            routinesUseCases.upsertRoutine(
+                Routine(
+                    name = suggestion.title,
+                    description = suggestion.description,
+                    category = category,
+                    periodicity = "Ponctuelle",
+                    priority = when (suggestion.importance) {
+                        3 -> "Élevée"
+                        2 -> "Moyenne"
+                        else -> "Faible"
+                    },
+                    isAllDay = true,
+                    scheduledDate = todayTs
+                )
+            )
+        }
+    }
+
+    fun fetchWeatherAndRefreshChallenge(latitude: Double? = null, longitude: Double? = null) {
+        viewModelScope.launch {
+            _weatherInfo.value = if (latitude != null && longitude != null) {
+                weatherRepository.getCurrentWeather(latitude, longitude)
+            } else {
+                weatherRepository.getCurrentWeather(45.5017, -73.5673)
+            }
+
             _dailyChallenge.value = generateDailyChallengeUseCase(
                 difficulty = _selectedDifficulty.value,
                 weather = _weatherInfo.value,
                 refreshToken = refreshToken
             )
+            syncChallengeAddedState()
         }
     }
 
@@ -127,7 +179,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val vms = entities.map { RoutineVM.fromEntity(it) }
             _routines.value = vms
             computeHomeData(vms)
+            syncChallengeAddedState()
         }.launchIn(viewModelScope)
+    }
+
+    private fun syncChallengeAddedState() {
+        val suggestion = _dailyChallenge.value
+        _isCurrentChallengeAdded.value = suggestion != null && _routines.value.any {
+            it.name == suggestion.title && it.description == suggestion.description
+        }
     }
 
     private fun computeHomeData(routines: List<RoutineVM>) {

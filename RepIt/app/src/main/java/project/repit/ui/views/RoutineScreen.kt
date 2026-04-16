@@ -94,37 +94,37 @@ fun RoutineScreen(
                 HeaderRow(onAddClick = { isAddingRoutine = true })
             }
 
-            if (todayRoutines.isEmpty() && upcomingRoutines.isEmpty()) {
-                item { EmptyStateMessage() }
+            // Section des routines prévues pour aujourd'hui
+            item { SectionHeader("Aujourd'hui", MaterialTheme.colorScheme.primary) }
+            if (todayRoutines.isEmpty()) {
+                item { EmptyStateMessage("Aucun défi pour aujourd'hui.") }
             } else {
-                // Section des routines prévues pour aujourd'hui
-                if (todayRoutines.isNotEmpty()) {
-                    item { SectionHeader("Aujourd'hui", MaterialTheme.colorScheme.primary) }
-                    items(todayRoutines, key = { it.id }) { routine ->
-                        RoutineItem(
-                            routine = routine,
-                            onEdit = { editingRoutine = routine },
-                            onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
-                            onStart = {
-                                handleRoutineStart(routine, hasNotificationPermission, permissionLauncher, navController, viewModel) { updatingRoutineValue = it }
-                            }
-                        )
-                    }
+                items(todayRoutines, key = { it.id }) { routine ->
+                    RoutineItem(
+                        routine = routine,
+                        onEdit = { editingRoutine = routine },
+                        onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
+                        onStart = {
+                            handleRoutineStart(routine, hasNotificationPermission, permissionLauncher, navController, viewModel) { updatingRoutineValue = it }
+                        }
+                    )
                 }
+            }
 
-                // Section des routines à venir
-                if (upcomingRoutines.isNotEmpty()) {
-                    item { SectionHeader("À venir", MaterialTheme.colorScheme.secondary) }
-                    items(upcomingRoutines, key = { it.id }) { routine ->
-                        RoutineItem(
-                            routine = routine,
-                            onEdit = { editingRoutine = routine },
-                            onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
-                            onStart = {
-                                handleRoutineStart(routine, hasNotificationPermission, permissionLauncher, navController, viewModel) { updatingRoutineValue = it }
-                            }
-                        )
-                    }
+            // Section des routines à venir (toujours visible)
+            item { SectionHeader("À venir", MaterialTheme.colorScheme.secondary) }
+            if (upcomingRoutines.isEmpty()) {
+                item { EmptyStateMessage("Aucun défi à venir.") }
+            } else {
+                items(upcomingRoutines, key = { it.id }) { routine ->
+                    RoutineItem(
+                        routine = routine,
+                        onEdit = { editingRoutine = routine },
+                        onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
+                        onStart = {
+                            handleRoutineStart(routine, hasNotificationPermission, permissionLauncher, navController, viewModel) { updatingRoutineValue = it }
+                        }
+                    )
                 }
             }
             item { Spacer(modifier = Modifier.height(32.dp)) }
@@ -190,9 +190,9 @@ private fun HeaderRow(onAddClick: () -> Unit) {
  * Message affiché lorsqu'aucune routine n'est présente.
  */
 @Composable
-private fun EmptyStateMessage() {
+private fun EmptyStateMessage(message: String) {
     Text(
-        text = "Aucun défi trouvé.",
+        text = message,
         modifier = Modifier.padding(16.dp),
         style = MaterialTheme.typography.bodyMedium
     )

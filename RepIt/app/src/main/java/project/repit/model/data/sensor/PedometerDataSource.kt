@@ -17,6 +17,7 @@ class PedometerDataSource(context: Context) : SensorEventListener {
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val stepCounter: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+    val hasStepCounter: Boolean get() = stepCounter != null
 
     private val _stepsToday = MutableStateFlow(0)
     val stepsToday: StateFlow<Int> = _stepsToday
