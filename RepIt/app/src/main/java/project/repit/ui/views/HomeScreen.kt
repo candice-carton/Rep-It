@@ -1,6 +1,7 @@
 package project.repit.ui.views
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.LocationManager
@@ -93,6 +94,12 @@ fun HomeScreen(
             }
         }
     )
+
+    LaunchedEffect(hasLocationPermission.value) {
+        if (hasLocationPermission.value) {
+            fetchWeatherFromDeviceLocation(context, viewModel)
+        }
+    }
 
     val todayTimestamp = Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
@@ -208,6 +215,7 @@ fun HomeScreen(
     }
 }
 
+@SuppressLint("MissingPermission")
 private fun fetchWeatherFromDeviceLocation(context: Context, viewModel: HomeViewModel) {
     val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
