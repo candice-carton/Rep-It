@@ -1,5 +1,10 @@
 package project.repit.ui.views
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -7,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -14,11 +20,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import project.repit.model.domain.model.ChallengeDifficulty
+import project.repit.model.domain.model.DailyChallengeSuggestion
 import project.repit.ui.components.AppPage
 import project.repit.ui.components.RoutineBox
 import project.repit.ui.theme.SoftViolet
@@ -27,27 +37,39 @@ import project.repit.ui.viewModel.RoutineUiEvent
 import project.repit.ui.viewModel.RoutineVM
 import java.util.Calendar
 
-/**
- * Écran d'accueil de l'application.
- * Affiche un message de bienvenue personnalisé, les défis du jour à réaliser et ceux déjà terminés.
- *
- * Toutes les données sont désormais préparées par le [HomeViewModel].
- *
- * @param navController Contrôleur de navigation.
- * @param viewModel ViewModel de l'accueil.
- */
 @Composable
 fun HomeScreen(
     navController: NavController,
     viewModel: HomeViewModel = viewModel()
 ) {
-    // Observation des listes pré-calculées par le ViewModel
+    val context = LocalContext.current
     val todoRoutines by viewModel.todoRoutines
     val doneRoutines by viewModel.doneRoutines
     val upcomingHighlights by viewModel.upcomingHighlights
+    val selectedDifficulty by viewModel.selectedDifficulty
+    val dailyChallenge by viewModel.dailyChallenge
+    val stepsToday by viewModel.stepsToday
 
     var updatingRoutineValue by remember { mutableStateOf<RoutineVM?>(null) }
-    
+
+    var hasActivityPermission by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACTIVITY_RECOGNITION
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
+
+    val activityPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { granted -> hasActivityPermission = granted }
+    )
+
     val todayTimestamp = Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
         set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
@@ -56,14 +78,32 @@ fun HomeScreen(
     Column(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
     ) {
-        HeaderSection()
+        HeaderSection(
+            weatherText = viewModel.getWeatherLabel(),
+            stepsToday = stepsToday,
+            onRefreshWeather = { viewModel.fetchWeatherAndRefreshChallenge() },
+            hasActivityPermission = hasActivityPermission,
+            onRequestActivityPermission = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    activityPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                }
+            }
+        )
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Section "Mes défis" - À faire
+            item {
+                DailyChallengeCard(
+                    selectedDifficulty = selectedDifficulty,
+                    suggestion = dailyChallenge,
+                    onDifficultySelected = { viewModel.setChallengeDifficulty(it) },
+                    onRefresh = { viewModel.refreshDailyChallenge() }
+                )
+            }
+
             item {
                 SectionHeader("Mes défis", "À faire")
                 Spacer(modifier = Modifier.height(8.dp))
@@ -74,7 +114,7 @@ fun HomeScreen(
             items(todoRoutines) { (routine, nextOcc) ->
                 RoutineBox(
                     routine = routine,
-                    onEdit = { /* Navigation vers édition */ },
+                    onEdit = { },
                     onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
                     isUpcoming = nextOcc > todayTimestamp,
                     forcedDate = nextOcc,
@@ -84,7 +124,6 @@ fun HomeScreen(
                 )
             }
 
-            // Section "Défis terminés"
             item {
                 Spacer(modifier = Modifier.height(12.dp))
                 SectionHeader("Défis du jour terminés", if (doneRoutines.isNotEmpty()) "Bravo" else "")
@@ -96,12 +135,11 @@ fun HomeScreen(
             items(doneRoutines) { routine ->
                 RoutineBox(
                     routine = routine,
-                    onEdit = { /* Navigation vers édition */ },
+                    onEdit = { },
                     onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) }
                 )
             }
 
-            // Section "Prochainement" - Highlight
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 UpcomingSectionHeader(onSeeAll = { navController.navigate(AppPage.Routines.name) })
@@ -113,7 +151,7 @@ fun HomeScreen(
             items(upcomingHighlights) { routine ->
                 RoutineBox(
                     routine = routine,
-                    onEdit = { /* Navigation vers édition */ },
+                    onEdit = { },
                     onDelete = { viewModel.onEvent(RoutineUiEvent.DeleteRoutine(routine)) },
                     isUpcoming = true,
                     onStart = {
@@ -125,7 +163,6 @@ fun HomeScreen(
         }
     }
 
-    // Dialogue pour les routines quantifiables
     updatingRoutineValue?.let { routine ->
         UpdateValueDialog(
             routine = routine,
@@ -138,9 +175,6 @@ fun HomeScreen(
     }
 }
 
-/**
- * Gère l'action de démarrage ou de progression d'une routine.
- */
 private fun handleStartAction(
     routine: RoutineVM,
     todayTimestamp: Long,
@@ -154,6 +188,47 @@ private fun handleStartAction(
         viewModel.onEvent(RoutineUiEvent.UpdateRoutine(routine.copy(lastCompletedDate = todayTimestamp, progress = 100)))
     } else {
         navController.navigate("${AppPage.Timer.name}/${routine.id}")
+    }
+}
+
+@Composable
+private fun DailyChallengeCard(
+    selectedDifficulty: ChallengeDifficulty,
+    suggestion: DailyChallengeSuggestion?,
+    onDifficultySelected: (ChallengeDifficulty) -> Unit,
+    onRefresh: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text("Défi aléatoire du jour", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Rafraîchir")
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(ChallengeDifficulty.FACILE, ChallengeDifficulty.MOYEN, ChallengeDifficulty.DIFFICILE).forEach { difficulty ->
+                    FilterChip(
+                        selected = difficulty == selectedDifficulty,
+                        onClick = { onDifficultySelected(difficulty) },
+                        label = { Text(difficulty.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                    )
+                }
+            }
+
+            if (suggestion == null) {
+                Text("Aucun défi disponible pour ce contexte.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text(suggestion.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(suggestion.description, style = MaterialTheme.typography.bodyMedium)
+                Text("Importance: ${suggestion.importance}/3", style = MaterialTheme.typography.bodySmall)
+            }
+        }
     }
 }
 
@@ -190,7 +265,7 @@ private fun UpcomingSectionHeader(onSeeAll: () -> Unit) {
 @Composable
 private fun UpdateValueDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit) {
     var newValue by remember { mutableStateOf("") }
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Ajouter une donnée") },
@@ -211,14 +286,14 @@ private fun UpdateValueDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave:
                 val added = newValue.toFloatOrNull() ?: 0f
                 val total = routine.currentValue + added
                 val progress = ((total / routine.targetValue) * 100).toInt().coerceIn(0, 100)
-                
+
                 val todayStart = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
                     set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
                 }.timeInMillis
-                
+
                 val isCompleted = total >= routine.targetValue
-                
+
                 onSave(routine.copy(
                     currentValue = total,
                     progress = progress,
@@ -231,7 +306,13 @@ private fun UpdateValueDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave:
 }
 
 @Composable
-fun HeaderSection() {
+fun HeaderSection(
+    weatherText: String,
+    stepsToday: Int,
+    hasActivityPermission: Boolean,
+    onRequestActivityPermission: () -> Unit,
+    onRefreshWeather: () -> Unit
+) {
     Surface(
         color = SoftViolet,
         modifier = Modifier
@@ -247,13 +328,19 @@ fun HeaderSection() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("Bonjour, Nathan !", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text("Bonjour !", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Text("Prêt pour ton défi du jour ?", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
                 }
-                ProfileIcon(letter = "N", score = 8)
+                ProfileIcon(letter = "R", score = 8)
             }
             Spacer(modifier = Modifier.height(24.dp))
-            WeatherAndStepsInfo()
+            WeatherAndStepsInfo(
+                weatherText = weatherText,
+                stepsToday = stepsToday,
+                hasActivityPermission = hasActivityPermission,
+                onRequestActivityPermission = onRequestActivityPermission,
+                onRefreshWeather = onRefreshWeather
+            )
         }
     }
 }
@@ -283,16 +370,33 @@ private fun ProfileIcon(letter: String, score: Int) {
 }
 
 @Composable
-private fun WeatherAndStepsInfo() {
+private fun WeatherAndStepsInfo(
+    weatherText: String,
+    stepsToday: Int,
+    hasActivityPermission: Boolean,
+    onRequestActivityPermission: () -> Unit,
+    onRefreshWeather: () -> Unit
+) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.WbSunny, contentDescription = null, tint = Color(0xFFFFD600), modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Ensoleillé, 22°C", color = Color.White, fontSize = 14.sp)
+            Column {
+                Text(weatherText, color = Color.White, fontSize = 14.sp)
+                TextButton(onClick = onRefreshWeather, contentPadding = PaddingValues(0.dp)) {
+                    Text("Actualiser météo", color = Color.White)
+                }
+            }
         }
         Column(horizontalAlignment = Alignment.End) {
-            Text("7,200", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Text("/ 10,000 pas", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+            Text(stepsToday.toString(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            if (hasActivityPermission) {
+                Text("/ 10,000 pas", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+            } else {
+                TextButton(onClick = onRequestActivityPermission, contentPadding = PaddingValues(0.dp)) {
+                    Text("Autoriser podomètre", color = Color.White)
+                }
+            }
         }
     }
 }
@@ -311,7 +415,7 @@ fun SectionHeader(title: String, tag: String) {
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
-                    tag, 
+                    tag,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     color = if (tag == "Bravo") Color(0xFF2E7D32) else Color(0xFF2DCE89),
                     fontSize = 12.sp,

@@ -99,7 +99,7 @@ fun RoutineScreen(
             } else {
                 // Section des routines prévues pour aujourd'hui
                 if (todayRoutines.isNotEmpty()) {
-                    item { SectionHeader("Défis du jour", MaterialTheme.colorScheme.primary) }
+                    item { SectionHeader("Aujourd'hui", MaterialTheme.colorScheme.primary) }
                     items(todayRoutines, key = { it.id }) { routine ->
                         RoutineItem(
                             routine = routine,
@@ -114,7 +114,7 @@ fun RoutineScreen(
 
                 // Section des routines à venir
                 if (upcomingRoutines.isNotEmpty()) {
-                    item { SectionHeader("Prochains défis", MaterialTheme.colorScheme.secondary) }
+                    item { SectionHeader("À venir", MaterialTheme.colorScheme.secondary) }
                     items(upcomingRoutines, key = { it.id }) { routine ->
                         RoutineItem(
                             routine = routine,
