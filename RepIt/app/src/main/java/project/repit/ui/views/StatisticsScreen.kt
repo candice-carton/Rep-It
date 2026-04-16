@@ -8,8 +8,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,49 +40,56 @@ fun StatisticsScreen(
 ) {
     val uiState by viewModel.uiState
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("Mes statistiques", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        item {
+            Text("Mes statistiques", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
 
-        CardStat("Défis totaux", uiState.totalChallenges.toString())
-        CardStat("Défis complétés", uiState.completedChallenges.toString())
-        CardStat("Taux de complétion", "${uiState.completionRate}%")
-        CardStat("Progression moyenne", "${uiState.averageProgress}%")
-        CardStat("Hydratation du jour", "${uiState.waterTodayLiters} L")
-        CardStat("Hydratation moyenne (7j)", String.format("%.2f L", uiState.waterWeeklyAverage))
+        item { CardStat("Défis totaux", uiState.totalChallenges.toString()) }
+        item { CardStat("Défis complétés", uiState.completedChallenges.toString()) }
+        item { CardStat("Taux de complétion", "${uiState.completionRate}%") }
+        item { CardStat("Progression moyenne", "${uiState.averageProgress}%") }
+        item { CardStat("Hydratation du jour", "${uiState.waterTodayLiters} L") }
+        item { CardStat("Hydratation moyenne (7j)", String.format("%.2f L", uiState.waterWeeklyAverage)) }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
-        ) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Par catégorie", fontWeight = FontWeight.SemiBold)
-                if (uiState.byCategory.isEmpty()) {
-                    Text("Aucune donnée pour l'instant")
-                } else {
-                    uiState.byCategory.forEach { (category, count) ->
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(category)
-                            Text(count.toString(), fontWeight = FontWeight.Bold)
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Par catégorie", fontWeight = FontWeight.SemiBold)
+                    if (uiState.byCategory.isEmpty()) {
+                        Text("Aucune donnée pour l'instant")
+                    } else {
+                        uiState.byCategory.forEach { (category, count) ->
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(category)
+                                Text(count.toString(), fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
             }
         }
 
-        WeightSection(
-            currentWeight = uiState.currentWeightKg,
-            targetWeight = uiState.targetWeightKg,
-            logs = uiState.weightLogs,
-            onAddWeight = viewModel::addWeightEntry
-        )
+        item {
+            WeightSection(
+                currentWeight = uiState.currentWeightKg,
+                targetWeight = uiState.targetWeightKg,
+                logs = uiState.weightLogs,
+                onAddWeight = viewModel::addWeightEntry
+            )
+        }
 
-        WaterSection(onAddWater = viewModel::addWaterEntry)
+        item { WaterSection(onAddWater = viewModel::addWaterEntry) }
+        item { Box(modifier = Modifier.height(8.dp)) }
     }
 }
 
@@ -169,19 +176,20 @@ private fun WeightSection(
 
 @Composable
 private fun SimpleWeightChart(logs: List<WeightLog>, targetWeight: Float) {
-    if (logs.isEmpty()) {
-        Text("Ajoute des valeurs pour voir la courbe.")
-        return
+    val chartValues = if (logs.isEmpty()) {
+        listOf(targetWeight.takeIf { it > 0f } ?: 0f)
+    } else {
+        logs.map { it.weightKg }
     }
 
-    val minValue = minOf(logs.minOf { it.weightKg }, targetWeight) - 1f
-    val maxValue = maxOf(logs.maxOf { it.weightKg }, targetWeight) + 1f
+    val minValue = (minOf(chartValues.minOrNull() ?: 0f, targetWeight) - 1f).coerceAtLeast(0f)
+    val maxValue = maxOf(chartValues.maxOrNull() ?: 1f, targetWeight) + 1f
 
     Box(modifier = Modifier.fillMaxWidth().height(140.dp)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
             val height = size.height
-            val stepX = if (logs.size <= 1) width else width / (logs.size - 1)
+            val stepX = if (chartValues.size <= 1) width else width / (chartValues.size - 1)
 
             val toY: (Float) -> Float = { value ->
                 val normalized = (value - minValue) / (maxValue - minValue).coerceAtLeast(0.001f)
@@ -197,12 +205,20 @@ private fun SimpleWeightChart(logs: List<WeightLog>, targetWeight: Float) {
             )
 
             val path = Path()
-            logs.forEachIndexed { index, log ->
+            chartValues.forEachIndexed { index, weight ->
                 val x = index * stepX
-                val y = toY(log.weightKg)
+                val y = toY(weight)
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             drawPath(path = path, color = Color(0xFF6C63FF))
+        }
+
+        if (logs.isEmpty()) {
+            Text(
+                text = "Graphique prêt : ajoute une valeur pour démarrer ta courbe.",
+                modifier = Modifier.align(Alignment.Center),
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }

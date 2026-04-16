@@ -24,6 +24,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import project.repit.model.domain.model.ChallengeDifficulty
+import project.repit.model.domain.useCase.ChallengeCatalog
 import project.repit.ui.viewModel.RoutineVM
 import project.repit.ui.viewModel.RoutineViewModel
 import project.repit.ui.viewModel.RoutineUiEvent
@@ -38,6 +40,13 @@ import java.util.Locale
 // --- CONSTANTES ---
 private val CATEGORIES = listOf("Santé", "Sport", "Bien-être", "Alimentation", "Travail", "Personnel", "Autre")
 private val PRIORITIES = listOf("Élevée", "Moyenne", "Faible")
+private val CREATION_MODES = listOf("Défi", "Série")
+private val SOURCE_MODES = listOf("Base de données", "Personnalisé")
+private val DIFFICULTY_OPTIONS = listOf(
+    "Facile" to ChallengeDifficulty.FACILE,
+    "Moyen" to ChallengeDifficulty.MOYEN,
+    "Difficile" to ChallengeDifficulty.DIFFICILE
+)
 
 /**
  * Écran principal de gestion des routines.
@@ -417,6 +426,8 @@ private fun EditRoutineDialog(routine: RoutineVM, onDismiss: () -> Unit, onSave:
  */
 @Composable
 private fun AddRoutineDialog(onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit) {
+    var creationMode by remember { mutableStateOf(CREATION_MODES.first()) }
+    var sourceMode by remember { mutableStateOf(SOURCE_MODES.first()) }
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf(CATEGORIES.first()) }
     var startAt by remember { mutableStateOf("09:00") }
@@ -430,38 +441,101 @@ private fun AddRoutineDialog(onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit)
     var isQuantifiable by remember { mutableStateOf(false) }
     var targetValue by remember { mutableStateOf("2") }
     var unit by remember { mutableStateOf("") }
+    var selectedDifficulty by remember { mutableStateOf(DIFFICULTY_OPTIONS.first().second) }
+    var selectedCatalogCategory by remember { mutableStateOf("Tous") }
+    var selectedCatalogId by remember { mutableStateOf<String?>(null) }
+
+    val filteredCatalogEntries = remember(selectedDifficulty, selectedCatalogCategory) {
+        ChallengeCatalog.entries.filter { entry ->
+            entry.difficulty == selectedDifficulty &&
+                (selectedCatalogCategory == "Tous" || entry.category == selectedCatalogCategory)
+        }
+    }
+    val selectedCatalogEntry = filteredCatalogEntries.firstOrNull { it.id == selectedCatalogId }
+        ?: filteredCatalogEntries.firstOrNull()
 
     LaunchedEffect(category) {
         if (category == "Alimentation" && unit.isEmpty()) unit = "L"
+    }
+    LaunchedEffect(filteredCatalogEntries) {
+        selectedCatalogId = filteredCatalogEntries.firstOrNull()?.id
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnClickOutside = false),
-        title = { Text("Nouveau défi") },
+        title = { Text("Nouveau ${creationMode.lowercase()}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nom du défi") }, modifier = Modifier.fillMaxWidth())
-                DropdownField(label = "Catégorie", options = CATEGORIES, selectedOption = category, onOptionSelected = { category = it })
-                
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    Text("Objectif quantifiable")
-                    Switch(checked = isQuantifiable, onCheckedChange = { isQuantifiable = it })
+                DropdownField(label = "Type", options = CREATION_MODES, selectedOption = creationMode, onOptionSelected = { creationMode = it })
+                DropdownField(label = "Source", options = SOURCE_MODES, selectedOption = sourceMode, onOptionSelected = { sourceMode = it })
+
+                if (sourceMode == "Base de données") {
+                    DropdownField(
+                        label = "Difficulté",
+                        options = DIFFICULTY_OPTIONS.map { it.first },
+                        selectedOption = DIFFICULTY_OPTIONS.first { it.second == selectedDifficulty }.first,
+                        onOptionSelected = { label ->
+                            selectedDifficulty = DIFFICULTY_OPTIONS.first { it.first == label }.second
+                        }
+                    )
+                    DropdownField(
+                        label = "Catégorie",
+                        options = listOf("Tous") + CATEGORIES,
+                        selectedOption = selectedCatalogCategory,
+                        onOptionSelected = { selectedCatalogCategory = it }
+                    )
+                    if (filteredCatalogEntries.isEmpty()) {
+                        Text("Aucun défi disponible pour cette combinaison.")
+                    } else {
+                        DropdownField(
+                            label = if (creationMode == "Série") "Série proposée" else "Défi proposé",
+                            options = filteredCatalogEntries.map { "${it.title} — ${it.description}" },
+                            selectedOption = selectedCatalogEntry?.let { "${it.title} — ${it.description}" }.orEmpty(),
+                            onOptionSelected = { selectedLabel ->
+                                selectedCatalogId = filteredCatalogEntries.firstOrNull { "${it.title} — ${it.description}" == selectedLabel }?.id
+                            }
+                        )
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text(if (creationMode == "Série") "Nom de la série" else "Nom du défi") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    DropdownField(label = "Catégorie", options = CATEGORIES, selectedOption = category, onOptionSelected = { category = it })
                 }
-                
-                if (isQuantifiable) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = targetValue, onValueChange = { targetValue = it }, label = { Text("Cible") }, modifier = Modifier.weight(1f))
-                        OutlinedTextField(value = unit, onValueChange = { unit = it }, label = { Text("Unité") }, modifier = Modifier.weight(1f))
+
+                val effectiveSeries = creationMode == "Série"
+                val effectiveRepetitive = effectiveSeries || isRepetitive
+                val canConfigureQuantifiable = sourceMode == "Personnalisé"
+                val effectiveQuantifiable = if (canConfigureQuantifiable) isQuantifiable else (selectedCatalogEntry?.isQuantifiable ?: false)
+                val effectiveTargetText = if (canConfigureQuantifiable) targetValue else (selectedCatalogEntry?.targetValue ?: 1).toString()
+                val effectiveUnitText = if (canConfigureQuantifiable) unit else if (effectiveQuantifiable) "unités" else ""
+                if (canConfigureQuantifiable) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Text("Objectif quantifiable")
+                        Switch(checked = isQuantifiable, onCheckedChange = { isQuantifiable = it })
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    Text("Répétitif")
-                    Switch(checked = isRepetitive, onCheckedChange = { isRepetitive = it })
+                if (effectiveQuantifiable) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = effectiveTargetText, onValueChange = { targetValue = it }, label = { Text("Cible") }, modifier = Modifier.weight(1f), enabled = canConfigureQuantifiable)
+                        OutlinedTextField(value = effectiveUnitText, onValueChange = { unit = it }, label = { Text("Unité") }, modifier = Modifier.weight(1f), enabled = canConfigureQuantifiable)
+                    }
                 }
 
-                if (isRepetitive) {
+                if (effectiveSeries) {
+                    Text("Série : choisis tes jours de répétition.")
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Text("Répétitif")
+                        Switch(checked = isRepetitive, onCheckedChange = { isRepetitive = it })
+                    }
+                }
+                if (effectiveRepetitive) {
                     DaySelector(selectedDays = repeatDays, onDaysChanged = { repeatDays = it })
                 } else {
                     DatePickerField(label = "Date prévue", selectedDate = scheduledDate, onDateSelected = { scheduledDate = it })
@@ -482,15 +556,39 @@ private fun AddRoutineDialog(onDismiss: () -> Unit, onSave: (RoutineVM) -> Unit)
         },
         confirmButton = {
             TextButton(onClick = {
-                if (name.isNotBlank()) {
+                val catalogName = selectedCatalogEntry?.title.orEmpty()
+                val finalName = if (sourceMode == "Base de données") catalogName else name
+                val finalCategory = if (sourceMode == "Base de données") selectedCatalogEntry?.category ?: category else category
+                val finalQuantifiable = if (sourceMode == "Base de données") selectedCatalogEntry?.isQuantifiable == true else isQuantifiable
+                val finalTarget = if (sourceMode == "Base de données") (selectedCatalogEntry?.targetValue ?: 1).toFloat() else (targetValue.toFloatOrNull() ?: 0f)
+                val finalUnit = if (sourceMode == "Base de données") {
+                    if (selectedCatalogEntry?.isQuantifiable == true) "unités" else ""
+                } else unit
+                val finalPriority = if (sourceMode == "Base de données") {
+                    when (selectedDifficulty) {
+                        ChallengeDifficulty.FACILE -> "Faible"
+                        ChallengeDifficulty.MOYEN -> "Moyenne"
+                        ChallengeDifficulty.DIFFICILE -> "Élevée"
+                    }
+                } else {
+                    priority
+                }
+                val finalRepetitive = creationMode == "Série" || isRepetitive
+                if (finalName.isNotBlank()) {
                     onSave(RoutineVM(
-                        name = name, description = "", category = category, startAt = if (isAllDay) "" else startAt,
+                        name = finalName,
+                        description = if (sourceMode == "Base de données") (selectedCatalogEntry?.description ?: "") else "",
+                        category = finalCategory,
+                        startAt = if (isAllDay) "" else startAt,
                         endAt = if (isAllDay) "" else endAt, isAllDay = isAllDay, 
-                        isRepetitive = isRepetitive, periodicity = "Personnalisé", priority = priority, 
-                        repeatDays = if (isRepetitive) repeatDays else emptyList(),
-                        scheduledDate = if (isRepetitive) null else scheduledDate,
-                        isQuantifiable = isQuantifiable, 
-                        targetValue = targetValue.toFloatOrNull() ?: 0f, unit = unit
+                        isRepetitive = finalRepetitive,
+                        periodicity = if (creationMode == "Série") "Série" else "Personnalisé",
+                        priority = finalPriority,
+                        repeatDays = if (finalRepetitive) repeatDays else emptyList(),
+                        scheduledDate = if (finalRepetitive) null else scheduledDate,
+                        isQuantifiable = finalQuantifiable,
+                        targetValue = finalTarget,
+                        unit = finalUnit
                     ))
                 }
             }) { Text("Ajouter") }
