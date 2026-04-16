@@ -30,5 +30,6 @@ data class Routine(
     val currentValue: Float = 0f,
     val unit: String = "",
     
-    val scheduledDate: Long? = null // Pour les défis non-répétitifs à une date précise
+    val scheduledDate: Long? = null, // Pour les défis non-répétitifs à une date précise
+    val isDailySuggestion: Boolean = false // Défi proposé automatiquement par l'application
 )

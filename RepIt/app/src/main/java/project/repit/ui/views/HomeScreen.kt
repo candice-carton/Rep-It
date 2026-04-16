@@ -5,12 +5,16 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Build
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,8 +56,12 @@ fun HomeScreen(
     val selectedDifficulty by viewModel.selectedDifficulty
     val dailyChallenge by viewModel.dailyChallenge
     val isCurrentChallengeAdded by viewModel.isCurrentChallengeAdded
+    val dailyChallengeMessage by viewModel.dailyChallengeMessage
     val stepsToday by viewModel.stepsToday
     val isStepCounterAvailable by viewModel.isStepCounterAvailable
+    val profileName by viewModel.profileName
+    val profileAvatarUri by viewModel.profileAvatarUri
+    val streakDays by viewModel.streakDays
 
     var updatingRoutineValue by remember { mutableStateOf<RoutineVM?>(null) }
 
@@ -73,6 +82,7 @@ fun HomeScreen(
     LaunchedEffect(hasActivityPermission) {
         viewModel.onActivityRecognitionPermissionChanged(hasActivityPermission)
     }
+    LaunchedEffect(Unit) { viewModel.refreshProfileData() }
 
     val activityPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -118,7 +128,11 @@ fun HomeScreen(
                         arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
                     )
                 }
-            }
+            },
+            profileName = profileName,
+            profileAvatarUri = profileAvatarUri,
+            streakDays = streakDays,
+            onOpenProfile = { navController.navigate(AppPage.Profile.name) }
         )
 
         LazyColumn(
@@ -135,6 +149,15 @@ fun HomeScreen(
                     onRefresh = viewModel::refreshDailyChallenge,
                     onAddToMyChallenges = viewModel::addSelectedDailyChallengeToRoutines
                 )
+                if (!dailyChallengeMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = dailyChallengeMessage ?: "",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    LaunchedEffect(dailyChallengeMessage) { viewModel.clearDailyChallengeMessage() }
+                }
             }
 
             item {
@@ -351,7 +374,11 @@ fun HeaderSection(
     isStepCounterAvailable: Boolean,
     hasActivityPermission: Boolean,
     onRequestActivityPermission: () -> Unit,
-    onRefreshWeather: () -> Unit
+    onRefreshWeather: () -> Unit,
+    profileName: String,
+    profileAvatarUri: String?,
+    streakDays: Int,
+    onOpenProfile: () -> Unit
 ) {
     Surface(
         color = SoftViolet,
@@ -360,10 +387,17 @@ fun HeaderSection(
         Column(modifier = Modifier.padding(top = 48.dp, start = 24.dp, end = 24.dp, bottom = 32.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
-                    Text("Bonjour !", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text("Bonjour ${profileName.substringBefore(" ")} !", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Text("Prêt pour ton défi du jour ?", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
                 }
-                ProfileIcon(letter = "R", score = 8)
+                Box(modifier = Modifier.padding(4.dp)) {
+                    ProfileIcon(
+                        letter = profileName.firstOrNull()?.uppercase() ?: "R",
+                        score = streakDays,
+                        avatarUri = profileAvatarUri,
+                        onClick = onOpenProfile
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(24.dp))
             WeatherAndStepsInfo(
@@ -379,10 +413,37 @@ fun HeaderSection(
 }
 
 @Composable
-private fun ProfileIcon(letter: String, score: Int) {
-    Box(contentAlignment = Alignment.BottomEnd) {
+private fun ProfileIcon(letter: String, score: Int, avatarUri: String?, onClick: () -> Unit) {
+    val context = LocalContext.current
+    val bitmap = remember(avatarUri) {
+        avatarUri?.let { uri ->
+            runCatching {
+                context.contentResolver.openInputStream(Uri.parse(uri))?.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+            }.getOrNull()
+        }
+    }
+
+    Box(
+        contentAlignment = Alignment.BottomEnd,
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable { onClick() }
+            .padding(2.dp)
+    ) {
         Surface(modifier = Modifier.size(50.dp), shape = CircleShape, color = Color.White.copy(alpha = 0.2f)) {
-            Box(contentAlignment = Alignment.Center) { Text(letter, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp) }
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Photo de profil",
+                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                    )
+                } else {
+                    Text(letter, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                }
+            }
         }
         Surface(modifier = Modifier.size(24.dp), shape = CircleShape, color = Color(0xFFFBC02D)) {
             Box(contentAlignment = Alignment.Center) { Text(score.toString(), color = SoftViolet, fontSize = 10.sp, fontWeight = FontWeight.Bold) }

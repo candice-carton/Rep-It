@@ -122,6 +122,7 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
             set(Calendar.MILLISECOND, 0)
             timeInMillis
         }
+        val tomorrowTs = todayTs + 24L * 60L * 60L * 1000L
 
         val filtered = if (_selectedCategory.value == "Tous") {
             allRoutines
@@ -142,6 +143,13 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
             .map { it.first }
 
         _upcomingRoutines.value = withNextOccurrence
+            .map { (routine, nextOccurrence) ->
+                if (routine.isRepetitive && nextOccurrence == todayTs) {
+                    routine to routine.getNextOccurrenceTimestamp(tomorrowTs)
+                } else {
+                    routine to nextOccurrence
+                }
+            }
             .filter { (_, nextOccurrence) -> nextOccurrence > todayTs }
             .sortedWith(
                 compareBy<Pair<RoutineVM, Long>> { it.second }
