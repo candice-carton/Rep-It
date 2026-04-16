@@ -115,45 +115,39 @@ class RoutineViewModel(application: Application) : AndroidViewModel(application)
      * @param allRoutines La liste complète des routines à traiter.
      */
     private fun updatePartitionedLists(allRoutines: List<RoutineVM>) {
-        val calendar = Calendar.getInstance()
-        val todayTs = calendar.run {
+        val todayTs = Calendar.getInstance().run {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
             timeInMillis
         }
-        val currentDayOfWeek = if (calendar.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 7
-                               else calendar.get(Calendar.DAY_OF_WEEK) - 1
- 
-        val filtered = if (_selectedCategory.value == "Tous") allRoutines
-                       else allRoutines.filter { it.category == _selectedCategory.value }
- 
-        val (today, upcoming) = filtered.partition { routine ->
-            if (routine.isRepetitive) {
-                routine.repeatDays.contains(currentDayOfWeek)
-            } else {
-                val sched = routine.scheduledDate ?: routine.createdAt
-                val cal = Calendar.getInstance().apply {
-                    timeInMillis = sched
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }
-                cal.timeInMillis <= todayTs
-            }
+
+        val filtered = if (_selectedCategory.value == "Tous") {
+            allRoutines
+        } else {
+            allRoutines.filter { it.category == _selectedCategory.value }
         }
- 
-        _todayRoutines.value = today.sortedWith(
-            compareBy<RoutineVM> { it.getNextOccurrenceTimestamp() }
-                .thenBy { priorityWeight(it.priority) }
-        )
- 
-        _upcomingRoutines.value = upcoming.sortedWith(
-            compareBy<RoutineVM> { it.getNextOccurrenceTimestamp() }
-                .thenBy { priorityWeight(it.priority) }
-        )
+
+        val withNextOccurrence = filtered.map { routine ->
+            routine to routine.getNextOccurrenceTimestamp(todayTs)
+        }
+
+        _todayRoutines.value = withNextOccurrence
+            .filter { (_, nextOccurrence) -> nextOccurrence == todayTs }
+            .sortedWith(
+                compareBy<Pair<RoutineVM, Long>> { it.second }
+                    .thenBy { priorityWeight(it.first.priority) }
+            )
+            .map { it.first }
+
+        _upcomingRoutines.value = withNextOccurrence
+            .filter { (_, nextOccurrence) -> nextOccurrence > todayTs }
+            .sortedWith(
+                compareBy<Pair<RoutineVM, Long>> { it.second }
+                    .thenBy { priorityWeight(it.first.priority) }
+            )
+            .map { it.first }
     }
  
     /**
