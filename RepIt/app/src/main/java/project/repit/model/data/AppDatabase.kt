@@ -9,7 +9,7 @@ import project.repit.model.domain.model.Routine
 import project.repit.model.domain.model.RoutineHistory
 import project.repit.util.DataConverters
 
-@Database(entities = [Routine::class, RoutineHistory::class], version = 7, exportSchema = false)
+@Database(entities = [Routine::class, RoutineHistory::class], version = 8, exportSchema = false)
 @TypeConverters(DataConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun routineDao(): RoutinesDao
