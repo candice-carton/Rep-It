@@ -9,7 +9,10 @@ data class DailyChallengeSuggestion(
     val description: String,
     val difficulty: ChallengeDifficulty,
     val isOutdoor: Boolean,
-    val importance: Int
+    val importance: Int,
+    val category: String = "Autre",
+    val isQuantifiable: Boolean = false,
+    val targetValue: Int = 0
 )
 
 enum class ChallengeDifficulty {
